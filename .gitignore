@@ -1,0 +1,9 @@
+# калид ва маълумоти сервер ҳеҷ гоҳ ба Git намераванд
+server/secret/
+server/data/
+server/.env
+node_modules/
+*.tmp
+*.log
+# кӯҳна (Google Apps Script), дигар истифода намешавад
+code.js

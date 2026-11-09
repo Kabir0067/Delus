@@ -1,0 +1,35 @@
+# DELUS — systemd: барнома ҳамеша кор мекунад, пас аз хатогӣ ё бозоғозии сервер худаш бармехезад
+# setup.sh ин файлро ба /etc/systemd/system/delus.service мегузорад
+
+[Unit]
+Description=DELUS — анбор ва савдо
+After=network-online.target
+Wants=network-online.target
+# systemd ҳеҷ гоҳ аз бозоғозӣ даст намекашад
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=delusapp
+Group=delusapp
+WorkingDirectory=/opt/delus
+ExecStart=/usr/bin/node /opt/delus/server/server.js
+Environment=NODE_ENV=production
+Restart=always
+RestartSec=3
+TimeoutStopSec=15
+MemoryMax=400M
+# ҳимоя: барнома танҳо ба папкаи маълумоти худ навишта метавонад
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/opt/delus/server/data
+
+[Install]
+WantedBy=multi-user.target

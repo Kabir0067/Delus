@@ -71,7 +71,7 @@ const Modal = {
         Modal.remove(m || Modal.top());
         /* Агар дарҳол тирезаи нав кушода нашавад, таърихи браузерро як қадам бармегардонем */
         setTimeout(() => {
-            if (!Modal.stack.length && history.state && history.state.modal) history.back();
+            if (!Modal.stack.length && history.state && history.state.modal) { Modal.ownBack = true; history.back(); }
         }, 0);
     },
     closeAll() { [...Modal.stack].reverse().forEach(m => Modal.close(m)); },
@@ -79,6 +79,12 @@ const Modal = {
 };
 
 window.addEventListener('popstate', () => {
+    /* Қафогардие, ки худи барнома пас аз бастани тиреза кард: агар дар ин миён тирезаи нав кушода шуда бошад, онро намебандем */
+    if (Modal.ownBack) {
+        Modal.ownBack = false;
+        if (Modal.stack.length) { try { history.pushState({ modal: true }, ''); } catch (e) { } }
+        return;
+    }
     if (Modal.stack.length) {
         Modal.remove(Modal.top());
         if (Modal.stack.length) { try { history.pushState({ modal: true }, ''); } catch (e) { } }
@@ -181,8 +187,45 @@ function drawNav() {
     const low = unseenNeed();
     $('#sideNav').innerHTML = NAV.map(n => `<button class="nav-a ${n.k === S.page ? 'on' : ''}" data-act="go" data-page="${n.k}" ${n.k === S.page ? 'aria-current="page"' : ''}>
         ${ic(n.icon, 19)}<span>${n.t}</span>${n.k === 'stock' && low ? `<span class="nav-n">${low}</span>` : ''}</button>`).join('');
-    $('#tabNav').innerHTML = NAV.filter(n => n.k !== 'set').map(n => `<button class="tab ${n.k === S.page ? 'on' : ''}" data-act="go" data-page="${n.k}" ${n.k === S.page ? 'aria-current="page"' : ''}>
-        <i>${ic(n.icon, 21)}</i><span>${n.t}</span></button>`).join('');
+    /* Телефон: чор саҳифаи асосӣ ва «Бештар» барои боқимонда */
+    const tabs = NAV.filter(n => TAB_MAIN.includes(n.k));
+    const inMore = !TAB_MAIN.includes(S.page);
+    $('#tabNav').innerHTML = tabs.map(n => `<button class="tab ${n.k === S.page ? 'on' : ''}" data-act="go" data-page="${n.k}" ${n.k === S.page ? 'aria-current="page"' : ''}>
+        <i>${ic(n.icon, 21)}${n.k === 'stock' && low ? '<b class="tab-n"></b>' : ''}</i><span>${n.t}</span></button>`).join('') +
+        `<button class="tab ${inMore ? 'on' : ''}" data-act="navMore" aria-haspopup="dialog"><i>${ic('more', 21)}</i><span>${inMore ? (NAV.find(n => n.k === S.page) || {}).t : 'Бештар'}</span></button>`;
+}
+const TAB_MAIN = ['home', 'prod', 'stock', 'debt'];
+
+function moreSheet() {
+    const items = NAV.filter(n => !TAB_MAIN.includes(n.k));
+    const m = Modal.open({
+        title: 'Бештар', size: 'sm',
+        body: `<div class="more-grid">${items.map(n => `<button class="more-i ${n.k === S.page ? 'on' : ''}" data-act="go" data-page="${n.k}">
+            <span class="tile ${{ tx: 'tone-move', rep: 'tone-buy', set: 'tone-warn' }[n.k] || ''}">${ic(n.icon, 22)}</span><b>${n.t}</b><small>${n.s}</small></button>`).join('')}
+            <button class="more-i" data-act="logout"><span class="tile tone-bad">${ic('out', 22)}</span><b>Баромадан</b><small>${esc(S.user || '')}</small></button></div>`
+    });
+    return m;
+}
+
+/* Интихоб аз якчанд роҳ: калиди тугмаи интихобшуда ё null бармегардад */
+function choose({ title, text = '', options }) {
+    return new Promise(res => {
+        let done = false;
+        const m = Modal.open({
+            title, size: 'sm',
+            body: `${text ? `<p class="card-p" style="margin:0 0 14px">${esc(text)}</p>` : ''}<div class="choose">${options.map(([k, label, cls]) =>
+                `<button type="button" class="btn lg block ${cls || ''}" data-k="${esc(k)}">${esc(label)}</button>`).join('')}
+                <button type="button" class="btn lg block quiet" data-k="">Бекор кардан</button></div>`,
+            onClose: () => { if (!done) res(null); }
+        });
+        $('.choose', m.el).addEventListener('click', e => {
+            const b = e.target.closest('[data-k]');
+            if (!b) return;
+            done = true;
+            m.close();
+            res(b.dataset.k || null);
+        });
+    });
 }
 
 function go(page, filters = {}, push = true) {

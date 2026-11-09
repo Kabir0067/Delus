@@ -45,8 +45,15 @@ function report(q) {
     if (q.loc) expBase = expBase.filter(e => String(e.location_id) === String(q.loc));
     if (q.ecat) expBase = expBase.filter(e => String(e.category).trim() === q.ecat);
     const list = inRange(base, from, to);
+    /* Қарз ба мизоҷ вобаста аст, на ба анбор ё мол — бо ин филтрҳо ҳисоб намешавад */
+    const debtsOk = !q.cat && !q.q && !q.loc && !q.ecat;
+    const given = debtsOk ? inRange(S.debts, from, to) : [];
+    const repaid = debtsOk ? inRange(S.pays.filter(isCash), from, to) : [];
     return {
-        from, to, base, expBase, list, exp: inRange(expBase, from, to),
+        from, to, base, expBase, list, exp: inRange(expBase, from, to), debtsOk, given, repaid,
+        /* аз фурӯши ин давра чӣ қадар ба қарз рафт (қарзи дастӣ пул нест, ба ҳисоби пул дохил намешавад) */
+        givenOnSale: given.filter(d => d.receipt_code).reduce((s, d) => s + num(d.amount), 0),
+        repaidSum: repaid.reduce((s, p) => s + num(p.amount), 0),
         sales: list.filter(x => isSale(x) || isRet(x)),
         buys: list.filter(x => x.type === 'PURCHASE'),
         moves: list.filter(x => x.type === 'TRANSFER')
@@ -151,6 +158,11 @@ PAGES.home = {
             ${kpi('Воридот', 'in', 'tone-buy', amount(buySum), `${qty(sumQty(r.buys))} воҳид омад`, 'data-act="repOpen" data-tab="buy"')}
             ${kpi('Хароҷот', 'wallet', 'tone-exp', amount(expSum), `${fmt(r.exp.length)} сабт`, 'data-act="repOpen" data-tab="exp"')}
             ${kpi('Мол дар анбор', 'box', 'tone-move', amount(cost, 0), 'Бо нархи харид', 'data-act="go" data-page="stock"')}
+            ${(() => {
+                const open = customers().filter(c => c.left > MONEY_EPS), late = open.filter(c => c.late).length;
+                return kpi('Қарзи мизоҷон', 'debt', late ? 'tone-bad' : 'tone-warn', amount(open.reduce((s, c) => s + c.left, 0)),
+                    open.length ? `${fmt(open.length)} нафар${late ? ` · мӯҳлати ${late} гузашт` : ''}` : 'Қарздор нест', 'data-act="go" data-page="debt"');
+            })()}
         </div>
 
         <button class="rep-link" data-act="repOpen" data-tab="all">
@@ -182,7 +194,7 @@ PAGES.home = {
 };
 
 /* ---------- Ҳисобот ---------- */
-const REP_TABS = [['all', 'Умумӣ', 'chart'], ['sale', 'Фурӯш', 'sale'], ['profit', 'Фоида', 'tag'], ['exp', 'Хароҷот', 'wallet'], ['buy', 'Воридот', 'in'], ['move', 'Интиқол', 'move']];
+const REP_TABS = [['all', 'Умумӣ', 'chart'], ['sale', 'Фурӯш', 'sale'], ['profit', 'Фоида', 'tag'], ['debt', 'Қарз', 'debt'], ['exp', 'Хароҷот', 'wallet'], ['buy', 'Воридот', 'in'], ['move', 'Интиқол', 'move']];
 const repFilters = () => [S.rep.from, S.rep.to, S.rep.loc, S.rep.cat, S.rep.q, S.rep.ecat].filter(Boolean).length;
 
 function prevOf(q) {
@@ -246,7 +258,7 @@ const REP = {
     all(r, pv) {
         const rev = netRev(r.sales), prof = netProfit(r.sales), buy = r.buys.reduce((s, x) => s + txCost(x), 0), ex = sumExp(r.exp);
         const pr = pv ? { rev: netRev(pv.sales), prof: netProfit(pv.sales), buy: pv.buys.reduce((s, x) => s + txCost(x), 0), ex: sumExp(pv.exp) } : {};
-        const left = rev - buy - ex;
+        const left = rev - r.givenOnSale + r.repaidSum - buy - ex;
         const places = (S.rep.loc ? S.locations.filter(l => String(l.id) === String(S.rep.loc)) : activeLocs()).map(l => {
             const id = String(l.id), b = r.buys.filter(x => String(x.to_location_id) === id);
             const s = r.sales.filter(x => String(isRet(x) ? x.to_location_id : x.from_location_id) === id);
@@ -265,7 +277,9 @@ const REP = {
         </div>
         <div class="cols">
             ${rcard('wallet', 'tone-sale', 'Пул дар ин давра', `
-                <div class="kv"><span>Аз фурӯш омад</span><b class="num pos">+${fmt(rev, 2)}</b></div>
+                <div class="kv"><span>Аз фурӯш</span><b class="num pos">+${fmt(rev, 2)}</b></div>
+                ${r.debtsOk ? `<div class="kv"><span>Аз он ба қарз дода шуд</span><b class="num">−${fmt(r.givenOnSale, 2)}</b></div>
+                <div class="kv"><span>Қарз баргашт</span><b class="num pos">+${fmt(r.repaidSum, 2)}</b></div>` : ''}
                 <div class="kv"><span>Барои мол рафт</span><b class="num">−${fmt(buy, 2)}</b></div>
                 <div class="kv"><span>Хароҷот</span><b class="num">−${fmt(ex, 2)}</b></div>
                 <div class="kv total-kv"><span>Боқимонда</span><b class="num ${left < 0 ? 'neg' : 'pos'}">${fmt(left, 2)} ${esc(cur())}</b></div>`)}
@@ -629,7 +643,12 @@ const HELP = [
     ['Мизоҷ молро баргардонд', 'Амалиёти фурӯшро дар саҳифаи «Амалиётҳо» кушоед ва «Бозгашт»-ро пахш кунед. Мол ба ҷояш бармегардад ва маблағ аз фурӯш кам мешавад.'],
     ['Бақия бо моли воқеӣ рост намеояд', 'Молро дар ҷояш шуморед. Дар саҳифаи «Анбор» тугмаи «Шумориш»-ро пахш кунед ва миқдори воқеиро нависед. Барнома фарқро худаш сабт мекунад.'],
     ['Хароҷотро чӣ тавр сабт мекунам?', 'Дар саҳифаи асосӣ тугмаи «Хароҷот»-ро пахш кунед ва маблағ, сана ва сабабро нависед: иҷора, маош, нақлиёт ва ғайра. Хароҷот аз фоида кам мешавад ва дар саҳифаи асосӣ нишон дода мешавад.'],
-    ['Ҳисоботро чӣ тавр мебинам?', 'Саҳифаи «Ҳисобот»-ро кушоед ва бахшро интихоб кунед: Умумӣ, Фурӯш, Фоида, Хароҷот, Воридот ё Интиқол. Давраро интихоб кунед ё сана нависед. Бо тугмаи «Филтр» анбор, гурӯҳ, номи мол ва намуди хароҷотро интихоб кардан мумкин аст. Тугмаи CSV ҷадвалро ба файл мегирад.'],
+    ['Молро ба қарз (насия) чӣ тавр мефурӯшам?', 'Дар тирезаи «Фурӯш» молро интихоб кунед ва дар қисми «Пардохт» «Ба қарз (насия)»-ро пахш кунед. Номи мизоҷ ва телефонашро нависед. Агар мизоҷ ҳозир як қисми пулро медиҳад, онро дар «Ҳозир медиҳад» нависед. Агар хоҳед, рӯзеро гузоред, ки то он пулро медиҳад. Мол аз анбор кам мешавад ва қарз дар бахши «Қарз» пайдо мешавад.'],
+    ['Мизоҷ қарзашро каме супорид — чӣ кор кунам?', 'Бахши «Қарз»-ро кушоед, мизоҷро ёбед ва «Пардохт»-ро пахш кунед. Маблағеро, ки овард, нависед ва «Сабт кардан»-ро пахш кунед. Боқимонда худ аз худ кам мешавад. Агар мизоҷ якчанд қарз дошта бошад, пул аввал ба қарзи кӯҳнатарин меравад.'],
+    ['Қарзро чӣ тавр пурра мебандам?', 'Мизоҷро кушоед ва «Пурра бастан»-ро пахш кунед — маблағи боқимонда худаш навишта мешавад. Баъди сабт қарз ба рӯйхати «Пӯшида» мегузарад, вале таърихаш боқӣ мемонад.'],
+    ['Қарзи кӯҳнаро чӣ тавр сабт мекунам?', 'Агар мизоҷ пеш аз барнома қарздор буд, дар бахши «Қарз» «Қарзи нав»-ро пахш кунед ва ном, телефон, маблағ ва санаро нависед. Ин қарз ба пули ин давра таъсир намекунад, чунки мол пештар дода шуда буд.'],
+    ['Агар мизоҷ моли ба қарз гирифтаро баргардонад?', 'Фурӯшро дар «Амалиётҳо» кушоед ва «Бозгашт»-ро пахш кунед. Мол ба анбор бармегардад ва маблағи он аз қарзи мизоҷ худ аз худ кам мешавад.'],
+    ['Ҳисоботро чӣ тавр мебинам?', 'Саҳифаи «Ҳисобот»-ро кушоед ва бахшро интихоб кунед: Умумӣ, Фурӯш, Фоида, Қарз, Хароҷот, Воридот ё Интиқол. Давраро интихоб кунед ё сана нависед. Бо тугмаи «Филтр» анбор, гурӯҳ, номи мол ва намуди хароҷотро интихоб кардан мумкин аст. Тугмаи CSV ҷадвалро ба файл мегирад.'],
     ['Як молро нафурӯшем, вале таърихаш монад', 'Молро кушоед, «Тағйир додан»-ро пахш кунед ва «Ба бойгонӣ гузоштан»-ро интихоб кунед. Мол аз рӯйхат пинҳон мешавад, вале таърихи фурӯш боқӣ мемонад.'],
     ['Маълумот дар куҷо нигоҳ дошта мешавад?', 'Ҳама чиз дар ҷадвали Google нигоҳ дошта мешавад. Барнома маълумотро дар ҳар дақиқа ва ҳангоми кушодан навсозӣ мекунад. Агар дар ҷадвал чизеро дастӣ иваз кунед, он дар барнома низ пайдо мешавад.']
 ];

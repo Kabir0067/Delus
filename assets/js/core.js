@@ -10,10 +10,14 @@ const COLS = {
     Transactions: ['id', 'transaction_code', 'date', 'type', 'product_id', 'from_location_id', 'to_location_id', 'quantity', 'unit', 'base_quantity', 'unit_cost', 'unit_price', 'note', 'created_at', 'receipt_code'],
     Settings: ['key', 'value', 'note'],
     Images: ['product_id', 'data', 'updated_at'],
-    Expenses: ['id', 'date', 'category', 'amount', 'location_id', 'note', 'created_at']
+    Expenses: ['id', 'date', 'category', 'amount', 'location_id', 'note', 'created_at'],
+    Debts: ['id', 'customer', 'phone', 'amount', 'paid', 'status', 'date', 'due_date', 'receipt_code', 'note', 'created_at'],
+    DebtPayments: ['id', 'debt_id', 'amount', 'date', 'method', 'note', 'created_at']
 };
-const DATE_COLS = new Set(['date', 'created_at', 'updated_at']);
-const RANGES = ['Products!A:Q', 'Locations!A:D', 'Transactions!A:O', 'Settings!A:C', 'Expenses!A:G', 'login!A:B'];
+const DATE_COLS = new Set(['date', 'created_at', 'updated_at', 'due_date']);
+/* Дар сервер калид нест ва варақи login ба браузер намерасад */
+const SERVER = !!CONFIG.api;
+const RANGES = ['Products!A:Q', 'Locations!A:D', 'Transactions!A:O', 'Settings!A:C', 'Expenses!A:G', 'Debts!A:K', 'DebtPayments!A:G', ...(SERVER ? [] : ['login!A:B'])];
 const UNITS = ['дона', 'метр', 'кг', 'қуттӣ', 'ҷуфт', 'литр'];
 const TZ_HOURS = 5;          // Тоҷикистон: UTC+5, бе соати тобистона
 const PAGE_SIZE = 60;
@@ -23,6 +27,7 @@ const NAV = [
     { k: 'home', icon: 'home', t: 'Асосӣ', s: '' },
     { k: 'prod', icon: 'tag', t: 'Молҳо', s: 'Рӯйхати мол, нарх ва акс' },
     { k: 'stock', icon: 'box', t: 'Анбор', s: 'Бақияи мол дар ҳар ҷой' },
+    { k: 'debt', icon: 'debt', t: 'Қарз', s: 'Насия: кӣ чанд қарздор аст' },
     { k: 'tx', icon: 'list', t: 'Амалиётҳо', s: 'Таърихи фурӯш, воридот ва интиқол' },
     { k: 'rep', icon: 'chart', t: 'Ҳисобот', s: 'Фурӯш, фоида, хароҷот ва воридот' },
     { k: 'set', icon: 'gear', t: 'Танзимот', s: 'Анборҳо, парол ва намуди барнома' }
@@ -106,7 +111,7 @@ const hasAll = (text, query) => { const h = norm(text); return norm(query).split
 /* ==================================================================
    ПАЙВАСТ БО GOOGLE SHEETS
    ================================================================== */
-const BASE = `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.spreadsheetId}`;
+const BASE = SERVER ? `${CONFIG.api}/sheets` : `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.spreadsheetId}`;
 const READ_OPTS = 'valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER';
 const MSG = {
     net: 'Интернет нест. Пайвастро санҷед ва боз кӯшиш кунед.',
@@ -114,8 +119,11 @@ const MSG = {
     access: 'Дастрасӣ ба ҷадвал нест.',
     busy: 'Ҷадвал ҳоло банд аст. Пас аз як дақиқа боз кӯшиш кунед.',
     secure: 'Барнома бояд аз суроғаи бехатар (https) кушода шавад.',
-    fail: 'Амал иҷро нашуд. Боз кӯшиш кунед.'
+    fail: 'Амал иҷро нашуд. Боз кӯшиш кунед.',
+    noServer: 'Сервери барнома кор намекунад. Барномаро бо файли start.cmd оғоз кунед ва аз суроғаи http://localhost:8080 кушоед.'
 };
+/* Агар саҳифа на аз сервери барнома, балки аз сервери оддии файлҳо кушода шуда бошад, /api вуҷуд надорад */
+const NO_API = new Set([404, 405, 501]);
 const known = text => Object.assign(new Error(text), { known: true });
 
 let signKey = null;
@@ -163,12 +171,19 @@ async function getToken() {
 async function gFetch(url, opts = {}, retry = true, attempt = 0) {
     let r;
     try {
-        const t = await getToken();
-        r = await fetch(url, { ...opts, headers: { Authorization: `Bearer ${t}`, ...(opts.body ? { 'Content-Type': 'application/json' } : {}) } });
+        const ct = opts.body ? { 'Content-Type': 'application/json' } : {};
+        r = SERVER
+            ? await fetch(url, { ...opts, credentials: 'same-origin', headers: ct })
+            : await fetch(url, { ...opts, headers: { Authorization: `Bearer ${await getToken()}`, ...ct } });
     } catch (e) {
         if (e.known) throw e;
         if (retry && attempt < 2) { await sleep(600 * (attempt + 1)); return gFetch(url, opts, retry, attempt + 1); }
         throw known(MSG.net);
+    }
+    if (SERVER && NO_API.has(r.status) && !/json/.test(r.headers.get('content-type') || '')) throw known(MSG.noServer);
+    if (SERVER && r.status === 401) {
+        if (S.user) logout('Вақти воридшавӣ гузашт. Аз нав ворид шавед.');
+        throw known('Аз нав ворид шавед.');
     }
     if (r.status === 401 && attempt < 1) {
         accessToken = null;
@@ -183,6 +198,22 @@ async function gFetch(url, opts = {}, retry = true, attempt = 0) {
         console.error('Sheets', r.status, j.error && j.error.message);
         throw known(r.status === 403 ? MSG.access : r.status === 429 ? MSG.busy : MSG.fail);
     }
+    return j;
+}
+
+/* Дархост ба сервери худи барнома: воридшавӣ, баромадан, парол */
+async function serverCall(pathname, body) {
+    let r;
+    try {
+        r = await fetch(CONFIG.api + pathname, {
+            method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin',
+            headers: body === undefined ? {} : { 'Content-Type': 'application/json' },
+            body: body === undefined ? undefined : JSON.stringify(body)
+        });
+    } catch (e) { throw known(MSG.net); }
+    if (NO_API.has(r.status) && !/json/.test(r.headers.get('content-type') || '')) throw Object.assign(known(MSG.noServer), { status: r.status, noServer: true });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw Object.assign(known(j.error && typeof j.error === 'string' && j.error !== 'auth' ? j.error : r.status === 401 ? 'Аз нав ворид шавед.' : MSG.fail), { status: r.status });
     return j;
 }
 
@@ -280,13 +311,13 @@ const Local = {
    ================================================================== */
 const S = {
     user: null, fp: '',
-    products: [], locations: [], tx: [], txSorted: [], exp: [],
+    products: [], locations: [], tx: [], txSorted: [], exp: [], debts: [], pays: [],
     rep: { tab: 'all', k: 'month', from: '', to: '', loc: '', cat: '', q: '', ecat: '' }, homeK: 'today', fOpen: false, csv: null,
     heads: {}, cfg: { low_stock_default: 10, company_name: 'DELUS', currency: 'сомонӣ' },
     page: 'home', period: 'today', f: {}, limit: PAGE_SIZE,
     seq: 0, sig: '', syncedAt: 0, offline: false, schema: []
 };
-const I = { prod: new Map(), loc: new Map(), stock: new Map(), total: new Map() };
+const I = { prod: new Map(), loc: new Map(), stock: new Map(), total: new Map(), debt: new Map(), cust: new Map() };
 
 const isActive = r => !['INACTIVE', 'ARCHIVED'].includes(String(r.status || 'ACTIVE').trim().toUpperCase());
 const activeProds = () => S.products.filter(isActive);
@@ -353,9 +384,48 @@ function reindex() {
         if (x.from_location_id !== '') add(p, String(x.from_location_id), -q);
     }
     S.txSorted = [...S.tx].sort((a, b) => String(b.date).localeCompare(String(a.date)) || num(b.id) - num(a.id));
+    reindexDebts();
 }
 
-function applyData([p, l, t, c, e]) {
+/* ---------- қарз: боқимонда ҳамеша аз пардохтҳо ҳисоб мешавад ---------- */
+const MONEY_EPS = 0.005;
+const custKey = (name, phone) => {
+    const digits = String(phone || '').replace(/\D/g, '').slice(-9);
+    return digits.length >= 7 ? 'p' + digits : 'n' + norm(name);
+};
+function reindexDebts() {
+    const paid = new Map();
+    for (const p of S.pays) { const k = String(p.debt_id); paid.set(k, (paid.get(k) || 0) + num(p.amount)); }
+    I.debt = new Map();
+    I.cust = new Map();
+    const today_ = today();
+    for (const d of S.debts) {
+        d._paid = Math.round((paid.get(String(d.id)) || 0) * 100) / 100;
+        d._left = Math.max(0, Math.round((num(d.amount) - d._paid) * 100) / 100);
+        d._closed = d._left <= MONEY_EPS;
+        d._late = !d._closed && !!d.due_date && String(d.due_date).slice(0, 10) < today_;
+        d._key = custKey(d.customer, d.phone);
+        I.debt.set(String(d.id), d);
+        let c = I.cust.get(d._key);
+        if (!c) { c = { key: d._key, name: d.customer, phone: d.phone, debts: [], amount: 0, paid: 0, left: 0, late: false, last: '' }; I.cust.set(d._key, c); }
+        c.debts.push(d);
+        if (String(d.date) >= String(c.debts[0].date)) { c.name = d.customer || c.name; c.phone = d.phone || c.phone; }
+        c.amount += num(d.amount); c.paid += d._paid; c.left += d._left; c.late = c.late || d._late;
+    }
+    for (const p of S.pays) {
+        const d = I.debt.get(String(p.debt_id));
+        if (d) { const c = I.cust.get(d._key); if (String(p.date) > c.last) c.last = String(p.date); }
+    }
+    for (const c of I.cust.values()) { c.left = Math.round(c.left * 100) / 100; c.debts.sort((a, b) => String(a.date).localeCompare(String(b.date))); }
+}
+const customers = () => [...I.cust.values()];
+const custBy = key => I.cust.get(key);
+const debtOfReceipt = rc => rc ? S.debts.find(d => d.receipt_code === rc) : null;
+const isCash = p => String(p.method || 'CASH').toUpperCase() !== 'RETURN';
+
+function applyData([p, l, t, c, e, d, dp]) {
+    S.debts = parseTable('Debts', d || []);
+    S.pays = parseTable('DebtPayments', dp || []);
     S.products = parseTable('Products', p);
     S.locations = parseTable('Locations', l);
     S.tx = parseTable('Transactions', t);
@@ -383,8 +453,8 @@ function sync() {
                 const seq = S.seq;
                 const data = await DB.batchGet(RANGES);
                 if (seq !== S.seq) continue;
-                const logins = data.pop();
-                if (S.user) {
+                const logins = SERVER ? null : data.pop();
+                if (S.user && !SERVER) {
                     const ok = await Promise.all(logins.slice(1).map(r => fingerprint(r[0], r[1])));
                     if (!ok.includes(S.fp)) { logout('Логин ё парол иваз шудааст. Аз нав ворид шавед.'); return; }
                 }
@@ -402,7 +472,7 @@ function sync() {
             setOffline(false);
         } catch (e) {
             console.error(e);
-            if (e.message === MSG.net) setOffline(true);
+            if (e.message === MSG.net || e.message === MSG.noServer) setOffline(e.message === MSG.noServer ? 'server' : true);
             throw e;
         } finally {
             syncing = null;
@@ -423,7 +493,8 @@ function drawBanner() {
     const b = $('#banner');
     if (!b) return;
     const items = [];
-    if (S.offline) items.push(`<div class="offline">${ic('warn', 16)}<span>Пайваст нест. Маълумоти охирин нишон дода мешавад, сабти нав ҳоло имкон надорад.</span></div>`);
+    if (S.offline === 'server') items.push(`<div class="note bad">${ic('warn', 16)}<span>${esc(MSG.noServer)}</span></div>`);
+    else if (S.offline) items.push(`<div class="offline">${ic('warn', 16)}<span>Пайваст нест. Маълумоти охирин нишон дода мешавад, сабти нав ҳоло имкон надорад.</span></div>`);
     if (S.schema.length) items.push(`<div class="note bad">${ic('warn', 16)}<span>Дар ҷадвал ин сутунҳо нестанд: ${esc(S.schema.join(', '))}</span></div>`);
     b.innerHTML = items.join('');
 }
@@ -437,8 +508,7 @@ const maxId = rows => rows.reduce((m, r, i) => i === 0 ? m : Math.max(m, parseIn
 
 /* Як ё якчанд сатри амалиёт. Дар ду дастгоҳ якбора сабт шавад ҳам, рақамҳо такрор намемонанд. */
 async function addTx(lines, { receipt = false } = {}) {
-    const idCol = colName(head('Transactions').indexOf('id'));
-    const first = maxId(await DB.get(`Transactions!${idCol}:${idCol}`)) + 1;
+    const first = await nextIdOf('Transactions', S.tx, lines.length);
     const rc = receipt ? 'R-' + pad5(first) : '';
     const recs = lines.map((l, i) => ({
         ...l,
@@ -451,7 +521,8 @@ async function addTx(lines, { receipt = false } = {}) {
     const res = await DB.append('Transactions', recs.map(r => toRow('Transactions', r)));
     S.tx.push(...recs);
     wrote();
-    fixDuplicateIds(recs, res).catch(e => console.error(e));
+    /* бе сервер рақам дар браузер ҳисоб мешавад, бинобар ин такрор санҷида мешавад; бо сервер рақам ҳамеша ягона аст */
+    if (!SERVER) fixDuplicateIds(recs, res).catch(e => console.error(e));
     return recs;
 }
 
@@ -489,8 +560,12 @@ async function deleteTx(x) {
 }
 
 async function addProduct(rec) {
-    const a = await DB.batchGet(['Products!A:A', 'Transactions!E:E']);
-    const id = Math.max(maxId(a[0]), maxId(a[1]), ...S.products.map(p => num(p.id))) + 1;
+    let id;
+    if (SERVER) id = await nextIdOf('Products', S.products);
+    else {
+        const a = await DB.batchGet(['Products!A:A', 'Transactions!E:E']);
+        id = Math.max(maxId(a[0]), maxId(a[1]), ...S.products.map(p => num(p.id))) + 1;
+    }
     const p = {
         ...rec, id,
         product_code: rec.product_code || 'DL-' + pad5(id),
@@ -543,7 +618,7 @@ async function saveExpense(e, rec) {
         await DB.setFields('Expenses', row, rec);
         Object.assign(S.exp.find(x => String(x.id) === String(e.id)) || e, rec);
     } else {
-        const id = Math.max(maxId(await DB.get('Expenses!A:A')), ...S.exp.map(x => num(x.id)), 0) + 1;
+        const id = await nextIdOf('Expenses', S.exp);
         const full = { ...rec, id, created_at: nowStr() };
         await DB.append('Expenses', [toRow('Expenses', full)]);
         S.exp.push(full);
@@ -557,6 +632,95 @@ async function deleteExpense(e) {
     wrote();
 }
 
+/* ---------- қарз: сабт ---------- */
+/* Рақами нав. Бо сервер рақамро сервер медиҳад, то ду дастгоҳ як рақам нагиранд. n: чанд рақами пайдарпай */
+async function nextIdOf(sheet, local, n = 1) {
+    if (SERVER) return (await serverCall('/ids', { sheet, n })).first;
+    const c = colName(head(sheet).indexOf('id'));
+    return Math.max(maxId(await DB.get(`${sheet}!${c}:${c}`)), ...local.map(x => num(x.id)), 0) + 1;
+}
+
+/* Ҳолати қарз дар ҷадвал (suporid / status) аз рӯи пардохтҳо нав мешавад, то соҳиби мағоза дар ҷадвал ҳам дуруст бинад */
+async function syncDebtRows(ids) {
+    reindexDebts();
+    const idCol = colName(head('Debts').indexOf('id'));
+    const rows = await DB.get(`Debts!${idCol}:${idCol}`);
+    const rowOf = new Map(rows.map((r, i) => [String(r[0]), i + 1]));
+    const h = head('Debts'), data = [];
+    for (const id of new Set(ids.map(String))) {
+        const d = I.debt.get(id), row = rowOf.get(id);
+        if (!d || !row) continue;
+        d.paid = d._paid;
+        d.status = d._closed ? 'CLOSED' : 'OPEN';
+        data.push({ range: `Debts!${colName(h.indexOf('paid'))}${row}`, values: [[d._paid]] });
+        data.push({ range: `Debts!${colName(h.indexOf('status'))}${row}`, values: [[d.status]] });
+    }
+    await DB.setRanges(data);
+}
+
+async function addDebt(rec) {
+    const id = await nextIdOf('Debts', S.debts);
+    const d = { status: 'OPEN', paid: 0, note: '', receipt_code: '', due_date: '', ...rec, id, created_at: nowStr() };
+    await DB.append('Debts', [toRow('Debts', d)]);
+    S.debts.push(d);
+    wrote();
+    return d;
+}
+
+async function updateDebt(d, changes) {
+    const [row] = await DB.locate('Debts', 'id', d.id);
+    if (!row) throw known('Ин қарз дар ҷадвал ёфт нашуд. Навсозӣ кунед.');
+    await DB.setFields('Debts', row, changes);
+    Object.assign(I.debt.get(String(d.id)) || d, changes);
+    reindexDebts();
+    await syncDebtRows([d.id]);
+    wrote();
+}
+
+async function deleteDebt(d) {
+    const [dr, pr] = await Promise.all([DB.locate('Debts', 'id', d.id), DB.locate('DebtPayments', 'debt_id', d.id)]);
+    await DB.deleteRows({ DebtPayments: pr, Debts: dr });
+    S.debts = S.debts.filter(x => String(x.id) !== String(d.id));
+    S.pays = S.pays.filter(p => String(p.debt_id) !== String(d.id));
+    wrote();
+}
+
+/* Пардохтҳо: якчанд сатр якбора; баъд ҳолати қарзҳо нав мешавад */
+async function addPayments(list) {
+    if (!list.length) return [];
+    const first = await nextIdOf('DebtPayments', S.pays);
+    const recs = list.map((p, i) => ({ method: 'CASH', note: '', date: nowStr(), ...p, id: first + i, created_at: nowStr() }));
+    await DB.append('DebtPayments', recs.map(r => toRow('DebtPayments', r)));
+    S.pays.push(...recs);
+    await syncDebtRows(recs.map(r => r.debt_id));
+    wrote();
+    return recs;
+}
+
+/* Пардохти мизоҷ ба қарзҳои кушодаи ӯ аз кӯҳнатарин сар карда тақсим мешавад */
+async function payCustomer(c, amount, { method = 'CASH', note = '', date = nowStr() } = {}) {
+    let rest = Math.round(num(amount) * 100) / 100;
+    const open = c.debts.filter(d => !d._closed);
+    const total = open.reduce((s, d) => s + d._left, 0);
+    if (rest <= 0) throw known('Маблағро нависед.');
+    if (rest - total > MONEY_EPS) throw known(`Қарзи боқимонда ҳамагӣ ${money(total)} аст.`);
+    const list = [];
+    for (const d of open) {
+        if (rest <= MONEY_EPS) break;
+        const part = Math.min(rest, d._left);
+        list.push({ debt_id: d.id, amount: Math.round(part * 100) / 100, method, note, date });
+        rest = Math.round((rest - part) * 100) / 100;
+    }
+    return addPayments(list);
+}
+
+async function deletePayment(p) {
+    await DB.deleteRows({ DebtPayments: await DB.locate('DebtPayments', 'id', p.id) });
+    S.pays = S.pays.filter(x => String(x.id) !== String(p.id));
+    await syncDebtRows([p.debt_id]);
+    wrote();
+}
+
 async function saveLocation(l, changes) {
     if (l) {
         const [row] = await DB.locate('Locations', 'id', l.id);
@@ -565,7 +729,7 @@ async function saveLocation(l, changes) {
         Object.assign(l, changes);
         Object.assign(locBy(l.id) || l, changes);
     } else {
-        const id = Math.max(maxId(await DB.get('Locations!A:A')), 0) + 1;
+        const id = await nextIdOf('Locations', S.locations);
         const rec = { id, status: 'ACTIVE', ...changes };
         await DB.append('Locations', [toRow('Locations', rec)]);
         S.locations.push(rec);

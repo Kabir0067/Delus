@@ -20,7 +20,8 @@ function quickProducts() {
     return [...activeProds()].sort((a, b) => (n.get(String(b.id)) || 0) - (n.get(String(a.id)) || 0)).slice(0, 10);
 }
 
-function mountPicker(root, { onPick, onNew, stockAt, quick = false }) {
+/* quickWhen: аксҳои пешниҳод танҳо вақте намоёнанд, ки ин функсия true диҳад (масалан, ҳанӯз мол интихоб нашудааст) */
+function mountPicker(root, { onPick, onNew, stockAt, quick = false, quickWhen = () => true }) {
     root.innerHTML = `<div class="pick"><div class="search">${ic('search', 17)}
         <input type="search" data-auto placeholder="Ном ё рамзи молро нависед" autocomplete="off" enterkeyhint="search" aria-label="Ҷустуҷӯи мол"></div>
         <div class="pick-list" hidden></div>
@@ -28,10 +29,11 @@ function mountPicker(root, { onPick, onNew, stockAt, quick = false }) {
     const inp = $('input', root), list = $('.pick-list', root), pq = $('.pick-q', root);
     if (pq) pq.addEventListener('click', e => { const b = e.target.closest('[data-q]'); if (b) onPick(prodBy(b.dataset.q)); });
     let items = [], hot = 0;
+    root.refreshQuick = () => { if (pq) pq.hidden = !!inp.value.trim() || !quickWhen(); };
 
     function draw() {
         const q = inp.value.trim();
-        if (pq) pq.hidden = !!q;
+        if (pq) pq.hidden = !!q || !quickWhen();
         if (!q) { list.hidden = true; list.innerHTML = ''; items = []; return; }
         const found = matchProducts(q);
         items = found.map(p => ({ p }));
@@ -91,6 +93,27 @@ function docModal(kind, preset = null) {
     const lines = [];
     const dateF = field('Сана', `<input type="date" name="date" value="${today()}" max="${today()}">`);
 
+    /* Фурӯш: нақд ё ба қарз (насия) */
+    const payHtml = kind !== 'sale' ? '' : `
+        <div class="field"><span class="field-l">Пардохт</span>
+            <div class="seg pay-seg" role="radiogroup" aria-label="Пардохт">
+                <button type="button" class="on" data-pay="cash" role="radio" aria-checked="true">${ic('wallet', 15)}Нақд</button>
+                <button type="button" data-pay="debt" role="radio" aria-checked="false">${ic('debt', 15)}Ба қарз (насия)</button>
+            </div>
+            <input type="hidden" name="pay" value="cash">
+        </div>
+        <div class="debt-box" data-debt-box hidden>
+            <div class="grid2">
+                ${field('Номи мизоҷ', `<input type="text" name="debt_customer" list="debtCustList" maxlength="80" autocomplete="off" placeholder="Масалан: Фирӯз Раҳимов">`)}
+                ${field('Телефон', '<input type="tel" name="debt_phone" inputmode="tel" maxlength="20" autocomplete="off" placeholder="+992 …">')}
+            </div>
+            <div class="grid2">
+                ${field('Ҳозир медиҳад <em>(ихтиёрӣ)</em>', '<input type="text" inputmode="decimal" name="debt_prepay" autocomplete="off" placeholder="0">')}
+                ${field('То кай медиҳад <em>(ихтиёрӣ)</em>', `<input type="date" name="debt_due" min="${today()}">`)}
+            </div>
+            ${custDatalist('debtCustList')}
+        </div>`;
+
     const locHtml = kind === 'sale'
         ? field('Аз куҷо мефурӯшед', `<select name="loc">${locOptions(shop.id)}</select>`)
         : kind === 'buy'
@@ -104,6 +127,7 @@ function docModal(kind, preset = null) {
         body: `${locHtml}
             <div class="field"><span class="field-l">Мол</span><div data-pick></div></div>
             <div class="lines" data-lines></div>
+            ${payHtml}
             <details class="extra"><summary>${ic('right', 14)}Сана ва эзоҳ</summary>${dateF}
             ${field('Эзоҳ <em>(ихтиёрӣ)</em>', `<input type="text" name="note" maxlength="200" placeholder="${kind === 'sale' ? 'Номи мизоҷ ё рақами телефон' : 'Масалан: мошини 80-AA-123'}">`)}</details>`,
         onSubmit: data => saveDoc(kind, lines, data)
@@ -111,6 +135,24 @@ function docModal(kind, preset = null) {
 
     const box = $('[data-lines]', m.el);
     const sel = n => $(`[name=${n}]`, m.el);
+    if (kind === 'sale') {
+        const seg = $('.pay-seg', m.el), dbox = $('[data-debt-box]', m.el);
+        seg.addEventListener('click', e => {
+            const b = e.target.closest('[data-pay]');
+            if (!b) return;
+            $$('[data-pay]', seg).forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', x === b); });
+            sel('pay').value = b.dataset.pay;
+            dbox.hidden = b.dataset.pay !== 'debt';
+            if (!dbox.hidden) sel('debt_customer').focus();
+            drawTotals();
+        });
+        sel('debt_prepay').addEventListener('input', () => drawTotals());
+        /* Номи мизоҷи шинос → телефонаш худ аз худ пур мешавад */
+        sel('debt_customer').addEventListener('input', () => {
+            const c = customers().find(x => norm(x.name) === norm(sel('debt_customer').value));
+            if (c && c.phone && !sel('debt_phone').value) sel('debt_phone').value = c.phone;
+        });
+    }
     const srcLoc = () => kind === 'move' ? sel('from').value : sel('loc').value;
     const lineSum = l => num(l.q) * num(kind === 'sale' ? l.price : l.cost);
 
@@ -145,8 +187,12 @@ function docModal(kind, preset = null) {
         $('[data-count]', m.el).textContent = n ? `${fmt(n)} мол` : 'Ҳоло мол нест';
         const total = $('[data-total]', m.el), extra = $('[data-extra]', m.el);
         if (kind === 'sale') {
-            total.textContent = money(lines.reduce((s, l) => s + lineSum(l), 0));
-            extra.textContent = n ? `Фоида: ${money(lines.reduce((s, l) => s + num(l.q) * (num(l.price) - num(l.p.purchase_price)), 0))}` : '';
+            const sum = lines.reduce((s, l) => s + lineSum(l), 0);
+            total.textContent = money(sum);
+            const onDebt = sel('pay').value === 'debt';
+            extra.textContent = !n ? '' : onDebt
+                ? `Ба қарз: ${money(Math.max(0, sum - num(sel('debt_prepay').value)))}`
+                : `Фоида: ${money(lines.reduce((s, l) => s + num(l.q) * (num(l.price) - num(l.p.purchase_price)), 0))}`;
         } else if (kind === 'buy') {
             total.textContent = money(lines.reduce((s, l) => s + lineSum(l), 0));
             extra.textContent = '';
@@ -165,6 +211,8 @@ function docModal(kind, preset = null) {
             ...(have > 0 ? [`<button type="button" class="qchip" data-set="${have}">Ҳама (${qty(have)})</button>`] : []), ...add].join('');
     }
     function drawLines() {
+        const pr = $('[data-pick]', m.el);
+        if (pr && pr.refreshQuick) pr.refreshQuick();
         if (!lines.length) {
             box.innerHTML = `<div class="lines-empty">${ic('tag', 20)}<span>Молро интихоб кунед. Миқдор ва нарх дар ин ҷо пайдо мешаванд.</span></div>`;
             drawTotals();
@@ -224,6 +272,7 @@ function docModal(kind, preset = null) {
     mountPicker($('[data-pick]', m.el), {
         stockAt: srcLoc,
         quick: true,
+        quickWhen: () => !lines.length,
         onPick: addLine,
         onNew: kind === 'buy' ? name => productForm(null, { name, noOpening: true, onSaved: addLine }) : null
     });
@@ -242,6 +291,16 @@ async function saveDoc(kind, lines, data) {
     if (data.date > today()) throw bad('Санаи оянда интихоб шудааст.');
 
     if (kind === 'move' && String(data.from) === String(data.to)) throw bad('Ҷойи баромад ва расидан бояд гуногун бошанд.');
+
+    /* Қарз пеш аз ҳар сабт санҷида мешавад, то фурӯш бе қарз сабт нашавад */
+    const onDebt = kind === 'sale' && data.pay === 'debt';
+    const saleSum = Math.round(lines.reduce((s, l) => s + num(l.q) * num(l.price), 0) * 100) / 100;
+    const prepay = onDebt ? Math.round(num(data.debt_prepay) * 100) / 100 : 0;
+    if (onDebt) {
+        if (!String(data.debt_customer || '').trim()) throw bad('Номи мизоҷро нависед, ки қарз гирифт.');
+        if (prepay < 0) throw bad('Маблағи пешпардохт нодуруст аст.');
+        if (prepay >= saleSum) throw bad('Пешпардохт ба маблағи пурра баробар аст — «Нақд»-ро интихоб кунед.');
+    }
 
     if (kind !== 'buy') {
         const src = kind === 'sale' ? data.loc : data.from;
@@ -266,10 +325,19 @@ async function saveDoc(kind, lines, data) {
         recs = lines.map(l => ({ ...base(l), type: 'TRANSFER', from_location_id: num(data.from), to_location_id: num(data.to), unit_cost: num(l.p.purchase_price), unit_price: num(l.p.sale_price) }));
     }
 
-    await addTx(recs, { receipt: kind === 'sale' });
+    const saved = await addTx(recs, { receipt: kind === 'sale' });
     if (kind === 'buy') await updatePrices(lines);
 
-    toast(kind === 'sale' ? `Фурӯш сабт шуд: ${money(lines.reduce((s, l) => s + num(l.q) * num(l.price), 0))}`
+    if (onDebt) {
+        const d = await addDebt({
+            customer: String(data.debt_customer).trim(), phone: String(data.debt_phone || '').trim(),
+            amount: saleSum, date, due_date: data.debt_due || '', receipt_code: saved[0].receipt_code, note
+        });
+        if (prepay > 0) await addPayments([{ debt_id: d.id, amount: prepay, method: 'CASH', note: 'Пешпардохт', date }]);
+        toast(`Фурӯш ба қарз сабт шуд. ${d.customer} қарздор: ${money(saleSum - prepay)}`);
+        return;
+    }
+    toast(kind === 'sale' ? `Фурӯш сабт шуд: ${money(saleSum)}`
         : kind === 'buy' ? 'Воридот сабт шуд' : 'Интиқол сабт шуд');
 }
 
@@ -432,10 +500,20 @@ function productForm(p = null, { name = '', noOpening = false, onSaved } = {}) {
             const code = String(d.product_code || '').trim();
             if (code && others.some(x => String(x.product_code).trim().toLowerCase() === code.toLowerCase())) throw bad(`Рамзи «${code}» аллакай истифода шудааст.`);
             if (num(d.purchase_price) < 0 || num(d.sale_price) < 0) throw bad('Нарх манфӣ шуда наметавонад.');
-            const twin = others.find(x => norm(x.name) === norm(nm));
+            /* Агар чунин мол ҳаст, нусхаи дуюм сохта намешавад — моли нав ба бақияи ҳамон мол илова мегардад */
+            const twin = others.find(x => isActive(x) && norm(x.name) === norm(nm));
             if (twin && (!p || norm(p.name) !== norm(nm))) {
-                const yes = await ask({ title: 'Чунин мол аллакай ҳаст', text: `«${twin.name}» (${twin.product_code}) дар рӯйхат ҳаст. Моли дигар сабт кунем?`, ok: 'Сабт кардан' });
-                if (!yes) return false;
+                const pickTwin = await choose({
+                    title: 'Ин мол аллакай ҳаст',
+                    text: `«${twin.name}» дар анбор ${qty(qtyAll(twin.id))} ${unitOf(twin)} дорад. Моли омадаро ба ҳамин мол илова кунем? Бақия танҳо зиёд мешавад.`,
+                    options: [['add', `Ба «${twin.name}» илова кардан`, 'primary'], ['new', 'Не, моли дигар аст — алоҳида сохтан', '']]
+                });
+                if (!pickTwin) return false;
+                if (pickTwin === 'add') {
+                    m.close();
+                    if (onSaved) onSaved(twin); else docModal('buy', twin);
+                    return false;
+                }
             }
             const rec = {
                 name: nm,
@@ -562,6 +640,8 @@ function txView(id) {
         ...(x.note ? [['Эзоҳ', x.note]] : [])
     ];
     const left = isSale(x) ? round3(num(x.quantity) - returnedOf(x)) : 0;
+    const debt = debtOfReceipt(x.receipt_code);
+    if (debt) rows.push(['Қарз', `${debt.customer}: ${debt._closed ? 'пурра пардохт шуд' : 'боқимонда ' + money(debt._left)}`]);
     const m = Modal.open({
         title: T.t, sub: [x.transaction_code, x.receipt_code].filter(Boolean).join(' · '), icon: T.icon,
         tone: { SALE: 'tone-sale', PURCHASE: 'tone-buy', TRANSFER: 'tone-move', ADJUSTMENT: 'tone-warn', RETURN: 'tone-bad' }[x.type] || '',
@@ -576,7 +656,11 @@ function txView(id) {
     const r = $('[data-ret]', m.el);
     if (r) r.onclick = () => { m.close(); returnForm(x, left); };
     $('[data-del]', m.el).onclick = async () => {
-        const yes = await ask({ title: 'Нест кардани амалиёт', text: `${T.t} (${x.transaction_code}) нест мешавад ва бақия аз нав ҳисоб мегардад.`, ok: 'Нест кардан', danger: true });
+        const yes = await ask({
+            title: 'Нест кардани амалиёт',
+            text: `${T.t} (${x.transaction_code}) нест мешавад ва бақия аз нав ҳисоб мегардад.${debt ? ` Ин чек ба қарзи «${debt.customer}» вобаста аст — қарзро дар бахши «Қарз» дуруст кунед.` : ''}`,
+            ok: 'Нест кардан', danger: true
+        });
         if (!yes) return;
         try { await deleteTx(x); toast('Амалиёт нест карда шуд'); m.close(); }
         catch (e) { showErr(e); }
@@ -620,9 +704,12 @@ function txEdit(x) {
 
 function returnForm(x, left) {
     const p = prodBy(x.product_id) || {};
+    const debt = debtOfReceipt(x.receipt_code);
+    const onDebt = debt && !debt._closed;
     formModal({
         title: 'Бозгашти мол', sub: `${p.name || ''} · ${x.transaction_code}`, icon: 'back', tone: 'tone-bad',
-        body: `<div class="grid2">
+        body: `${onDebt ? `<div class="note warn" style="margin-bottom:14px">${ic('debt', 16)}<span>Ин мол ба қарз фурӯхта шуда буд. Маблағи бозгашт аз қарзи «${esc(debt.customer)}» кам мешавад (боқимонда ${money(debt._left)}).</span></div>` : ''}
+            <div class="grid2">
                 ${field(`Миқдор (то ${qty(left)})`, `<input type="text" inputmode="decimal" name="quantity" value="${esc(left)}" data-auto autocomplete="off">`)}
                 ${field('Ба куҷо', `<select name="loc">${locOptions(x.from_location_id)}</select>`)}
             </div>
@@ -638,7 +725,14 @@ function returnForm(x, left) {
                 quantity: q, unit: x.unit, unit_cost: num(x.unit_cost), unit_price: num(x.unit_price),
                 note: `Бозгашт аз ${x.transaction_code}${why ? ' · ' + why : ''}`, receipt_code: x.receipt_code
             }]);
-            toast(`Бозгашт сабт шуд: ${money(q * num(x.unit_price))}`);
+            const sum = Math.round(q * num(x.unit_price) * 100) / 100;
+            if (onDebt) {
+                const off = Math.min(sum, I.debt.get(String(debt.id))._left);
+                if (off > 0) await addPayments([{ debt_id: debt.id, amount: off, method: 'RETURN', note: `Бозгашти мол аз ${x.transaction_code}` }]);
+                toast(`Бозгашт сабт шуд. Қарзи ${debt.customer} ${money(off)} кам шуд.`);
+                return;
+            }
+            toast(`Бозгашт сабт шуд: ${money(sum)}`);
         }
     });
 }
@@ -761,6 +855,15 @@ function cfgPass() {
             ${field('Логин', `<input type="text" name="login" value="${esc(S.user)}" autocomplete="username" autocapitalize="none" spellcheck="false">`)}
             ${field('Пароли нав', '<input type="password" name="pass" autocomplete="new-password">', 'Агар паролро иваз кардан нахоҳед, холӣ гузоред.')}`,
         async onSubmit(d) {
+            if (SERVER) {
+                const r = await serverCall('/password', { current: d.cur, login: d.login, pass: d.pass });
+                S.user = r.user;
+                localStorage.setItem('delus.auth', JSON.stringify({ user: S.user, server: true }));
+                $('#userName').textContent = S.user;
+                toast('Логин ва парол сабт шуд');
+                renderPage();
+                return;
+            }
             const rows = await DB.get('login!A:B');
             const i = rows.findIndex((r, n) => n > 0 && String(r[0]).trim().toLowerCase() === S.user);
             if (i < 0) throw bad('Логини шумо дар ҷадвал ёфт нашуд.');
@@ -792,6 +895,10 @@ const ACT = {
     txView: el => txView(el.dataset.id),
     locNew: () => locForm(),
     locEdit: el => locForm(locBy(el.dataset.id)),
+    debtNew: el => debtForm(null, el.dataset.id ? custBy(el.dataset.id) : null),
+    debtorView: el => debtorView(el.dataset.id),
+    debtPay: el => payForm(custBy(el.dataset.id)),
+    navMore: () => moreSheet(),
     expNew: () => expenseForm(),
     expEdit: el => expenseForm(S.exp.find(x => String(x.id) === el.dataset.id)),
     fToggle(el) {
@@ -896,8 +1003,8 @@ document.addEventListener('input', e => {
    ================================================================== */
 async function startSession(login, pass) {
     S.user = String(login).trim().toLowerCase();
-    S.fp = await fingerprint(login, pass);
-    localStorage.setItem('delus.auth', JSON.stringify({ user: S.user, fp: S.fp }));
+    S.fp = SERVER ? '' : await fingerprint(login, pass);
+    localStorage.setItem('delus.auth', JSON.stringify(SERVER ? { user: S.user, server: true } : { user: S.user, fp: S.fp }));
     $('#userName').textContent = S.user;
     S.seq++;
 }
@@ -912,12 +1019,14 @@ function showLogin(msg = '') {
 }
 
 function logout(msg = '') {
+    if (SERVER && S.user) serverCall('/logout', {}).catch(() => { });
     Modal.closeAll();
     localStorage.removeItem('delus.auth');
     Local.clear('kv');
     Local.clear('img');
     IMG.clear();
-    Object.assign(S, { user: null, fp: '', sig: '', products: [], locations: [], tx: [], txSorted: [], exp: [], f: {}, page: 'home' });
+    Object.assign(S, { user: null, fp: '', sig: '', products: [], locations: [], tx: [], txSorted: [], exp: [], debts: [], pays: [], f: {}, page: 'home' });
+    reindexDebts();
     Object.assign(S.rep, { tab: 'all', k: 'month', from: '', to: '', loc: '', cat: '', q: '', ecat: '' });
     S.homeK = 'today';
     $('#view').innerHTML = '';
@@ -934,10 +1043,15 @@ $('#loginForm').addEventListener('submit', async e => {
     btn.disabled = true;
     btn.textContent = 'Санҷиш…';
     try {
-        const rows = await DB.get('login!A:B');
-        const row = rows.slice(1).find(r => String(r[0] ?? '').trim().toLowerCase() === user.toLowerCase() && String(r[1] ?? '').trim() === pass);
-        if (!row) throw known('Логин ё парол нодуруст аст.');
-        await startSession(row[0], row[1]);
+        if (SERVER) {
+            const r = await serverCall('/login', { user, pass });
+            await startSession(r.user, '');
+        } else {
+            const rows = await DB.get('login!A:B');
+            const row = rows.slice(1).find(r => String(r[0] ?? '').trim().toLowerCase() === user.toLowerCase() && String(r[1] ?? '').trim() === pass);
+            if (!row) throw known('Логин ё парол нодуруст аст.');
+            await startSession(row[0], row[1]);
+        }
         await enterApp();
     } catch (ex) {
         err.textContent = errText(ex);
@@ -980,9 +1094,21 @@ window.addEventListener('online', () => { if (S.user) syncQuiet(); });
 (async function init() {
     let saved = null;
     try { saved = JSON.parse(localStorage.getItem('delus.auth')); } catch (e) { }
-    if (!saved || !saved.user || !saved.fp) return showLogin();
+    if (SERVER) {
+        /* Сессия дар сервер санҷида мешавад; маълумоти маҳаллӣ танҳо барои тез кушодан аст */
+        try {
+            const me = await serverCall('/me');
+            if (!me.user) { localStorage.removeItem('delus.auth'); Local.clear('kv'); return showLogin(); }
+            saved = { user: me.user };
+        } catch (e) {
+            /* сервер нест: маълумоти кӯҳна нишон дода намешавад, то касе фикр накунад, ки сабт кор мекунад */
+            if (e.noServer) return showLogin(MSG.noServer);
+            /* интернет нест: агар пештар ворид шуда буд, маълумоти охиринро нишон медиҳем */
+            if (!saved || !saved.user) return showLogin(errText(e));
+        }
+    } else if (!saved || !saved.user || !saved.fp) return showLogin();
     S.user = saved.user;
-    S.fp = saved.fp;
+    S.fp = saved.fp || '';
     $('#userName').textContent = S.user;
     try { await enterApp(); }
     catch (e) {
