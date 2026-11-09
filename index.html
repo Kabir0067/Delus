@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="tg">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport"
+        content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#0b1430">
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a0f1f">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="DELUS">
+    <meta name="format-detection" content="telephone=no">
+    <title>DELUS — идораи мол ва савдо</title>
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" href="assets/img/icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="assets/img/icon-180.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://sheets.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="assets/css/style.css?v=20261115">
+    <script>
+        /* Мавзӯъро пеш аз намоиш мегузорем, то экран нахузад */
+        try { var t = localStorage.getItem('delus.theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) { }
+    </script>
+    <script src="assets/js/config.js?v=20261115" defer></script>
+    <script src="assets/js/core.js?v=20261115" defer></script>
+    <script src="assets/js/ui.js?v=20261115" defer></script>
+    <script src="assets/js/pages.js?v=20261115" defer></script>
+    <script src="assets/js/flows.js?v=20261115" defer></script>
+</head>
+
+<body>
+
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+        <defs>
+            <symbol id="i-logo" viewBox="0 0 24 24">
+                <path d="M13.2 2 4 14h6.2L9.4 22 19 10h-6.4z" fill="currentColor" stroke="none" />
+            </symbol>
+            <symbol id="i-home" viewBox="0 0 24 24">
+                <path d="M3 10.5 12 3l9 7.5" />
+                <path d="M5 9v11h14V9" />
+                <path d="M10 20v-6h4v6" />
+            </symbol>
+            <symbol id="i-box" viewBox="0 0 24 24">
+                <path
+                    d="M21 8v8a2 2 0 0 1-1 1.7l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.7l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8z" />
+                <path d="M3.3 7 12 12l8.7-5M12 22V12" />
+            </symbol>
+            <symbol id="i-tag" viewBox="0 0 24 24">
+                <path
+                    d="M20.6 12.6 12 21.2a2 2 0 0 1-2.8 0L2.8 14.8a2 2 0 0 1-.6-1.4V5a2 2 0 0 1 2-2h8.4a2 2 0 0 1 1.4.6l6.6 6.6a2 2 0 0 1 0 2.4z" />
+                <circle cx="7.5" cy="8" r="1.5" />
+            </symbol>
+            <symbol id="i-list" viewBox="0 0 24 24">
+                <path d="M8 6h13M8 12h13M8 18h13" />
+                <path d="M3.5 6h.01M3.5 12h.01M3.5 18h.01" />
+            </symbol>
+            <symbol id="i-gear" viewBox="0 0 24 24">
+                <path d="M4 7h10M18 7h2M4 17h2M10 17h10" />
+                <circle cx="16" cy="7" r="2" />
+                <circle cx="8" cy="17" r="2" />
+            </symbol>
+            <symbol id="i-sale" viewBox="0 0 24 24">
+                <path d="M3 4h2l2.2 11.2a2 2 0 0 0 2 1.6h8.2a2 2 0 0 0 2-1.6L21 8H6" />
+                <circle cx="10" cy="20.5" r="1.2" />
+                <circle cx="17" cy="20.5" r="1.2" />
+            </symbol>
+            <symbol id="i-in" viewBox="0 0 24 24">
+                <path d="M12 3v12M7 10l5 5 5-5" />
+                <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+            </symbol>
+            <symbol id="i-move" viewBox="0 0 24 24">
+                <path d="M4 8h15M15 4l4 4-4 4" />
+                <path d="M20 16H5M9 12l-4 4 4 4" />
+            </symbol>
+            <symbol id="i-fix" viewBox="0 0 24 24">
+                <path d="M9 11l3 3L21 5" />
+                <path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h9" />
+            </symbol>
+            <symbol id="i-back" viewBox="0 0 24 24">
+                <path d="M9 14 4 9l5-5" />
+                <path d="M4 9h11a5 5 0 0 1 0 10h-3" />
+            </symbol>
+            <symbol id="i-search" viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.6-3.6" />
+            </symbol>
+            <symbol id="i-x" viewBox="0 0 24 24">
+                <path d="M6 6l12 12M18 6 6 18" />
+            </symbol>
+            <symbol id="i-plus" viewBox="0 0 24 24">
+                <path d="M12 5v14M5 12h14" />
+            </symbol>
+            <symbol id="i-minus" viewBox="0 0 24 24">
+                <path d="M5 12h14" />
+            </symbol>
+            <symbol id="i-edit" viewBox="0 0 24 24">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
+            </symbol>
+            <symbol id="i-trash" viewBox="0 0 24 24">
+                <path d="M3 6h18M8 6V4h8v2M6 6l1 15h10l1-15" />
+                <path d="M10 11v6M14 11v6" />
+            </symbol>
+            <symbol id="i-archive" viewBox="0 0 24 24">
+                <rect x="3" y="4" width="18" height="4" rx="1" />
+                <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4" />
+            </symbol>
+            <symbol id="i-camera" viewBox="0 0 24 24">
+                <path d="M4 7h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1z" />
+                <circle cx="12" cy="13" r="3.6" />
+            </symbol>
+            <symbol id="i-check" viewBox="0 0 24 24">
+                <path d="m4 12 5 5L20 6" />
+            </symbol>
+            <symbol id="i-warn" viewBox="0 0 24 24">
+                <path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" />
+                <path d="M12 9v4M12 17h.01" />
+            </symbol>
+            <symbol id="i-pin" viewBox="0 0 24 24">
+                <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z" />
+                <circle cx="12" cy="10" r="3" />
+            </symbol>
+            <symbol id="i-sync" viewBox="0 0 24 24">
+                <path d="M21 12a9 9 0 1 1-2.6-6.4" />
+                <path d="M21 4v5h-5" />
+            </symbol>
+            <symbol id="i-out" viewBox="0 0 24 24">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <path d="m16 17 5-5-5-5M21 12H9" />
+            </symbol>
+            <symbol id="i-user" viewBox="0 0 24 24">
+                <circle cx="12" cy="8" r="4" />
+                <path d="M4 21a8 8 0 0 1 16 0" />
+            </symbol>
+            <symbol id="i-lock" viewBox="0 0 24 24">
+                <rect x="4" y="10.5" width="16" height="11" rx="2.5" />
+                <path d="M8 10.5V7a4 4 0 0 1 8 0v3.5" />
+            </symbol>
+            <symbol id="i-right" viewBox="0 0 24 24">
+                <path d="m9 5 7 7-7 7" />
+            </symbol>
+            <symbol id="i-sheet" viewBox="0 0 24 24">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <path d="M3 9h18M3 15h18M9 3v18" />
+            </symbol>
+            <symbol id="i-sun" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="4" />
+                <path
+                    d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
+            </symbol>
+            <symbol id="i-help" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M9.5 9.3a2.6 2.6 0 0 1 5 .9c0 1.7-2.5 2.2-2.5 3.8M12 17h.01" />
+            </symbol>
+        <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.8"/><path d="m21 16-5-5-9 9"/></symbol>
+            <symbol id="i-socket" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><circle cx="12" cy="12" r="5.2"/><path d="M9.8 12h.01M14.2 12h.01"/></symbol>
+            <symbol id="i-switch" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="4"/><rect x="8" y="7" width="8" height="10" rx="1.5"/><path d="M8 12h8"/></symbol>
+            <symbol id="i-cable" viewBox="0 0 24 24"><path d="M6 3v5a3 3 0 0 0 3 3h6a3 3 0 0 1 3 3v7"/><path d="M3.5 3h5M15.5 21h5"/></symbol>
+            <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4"/><path d="M12 3a6.5 6.5 0 0 0-4 11.6c.7.6 1 1.3 1 2.4h6c0-1.1.3-1.8 1-2.4A6.5 6.5 0 0 0 12 3z"/></symbol>
+            <symbol id="i-breaker" viewBox="0 0 24 24"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><rect x="9.5" y="7" width="5" height="7" rx="1"/><path d="M9.5 10.5h5M10 17.5h4"/></symbol>
+        <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M4 7.5A2.5 2.5 0 0 1 6.5 5H18v3"/><rect x="3.5" y="8" width="17.5" height="12" rx="2.5"/><path d="M16.5 14h.01"/></symbol>
+            <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></symbol>
+            <symbol id="i-filter" viewBox="0 0 24 24"><path d="M3 5h18l-7 8.5V20l-4-2v-4.5z"/></symbol>
+        <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+        </defs>
+    </svg>
+
+    <!-- Лавҳаи боркунӣ -->
+    <div id="boot" class="boot" aria-label="Боркунӣ"><span class="boot-mark"><svg class="ic" width="26" height="26">
+                <use href="#i-logo"></use>
+            </svg></span></div>
+
+    <!-- Воридшавӣ -->
+    <div id="login" class="login" hidden>
+        <form id="loginForm" class="login-card" autocomplete="on" novalidate>
+            <span class="brand-mark lg"><svg class="ic" width="24" height="24">
+                    <use href="#i-logo"></use>
+                </svg></span>
+            <h1>DELUS</h1>
+            <p class="login-sub">Идораи мол ва савдо</p>
+
+            <label class="field">
+                <span class="field-l">Логин</span>
+                <input id="loginUser" name="username" type="text" autocomplete="username" autocapitalize="none"
+                    spellcheck="false" required>
+            </label>
+            <label class="field">
+                <span class="field-l">Парол</span>
+                <input id="loginPass" name="password" type="password" autocomplete="current-password" required>
+            </label>
+
+            <p id="loginError" class="form-err" role="alert" hidden></p>
+            <button type="submit" id="loginBtn" class="btn primary block lg">Ворид шудан</button>
+        </form>
+    </div>
+
+    <!-- Барнома -->
+    <div id="app" class="app" hidden>
+        <aside class="side">
+            <div class="side-brand">
+                <span class="brand-mark"><svg class="ic" width="17" height="17">
+                        <use href="#i-logo"></use>
+                    </svg></span>
+                <span><b id="brandName">DELUS</b><small>Анбор ва савдо</small></span>
+            </div>
+            <nav id="sideNav" class="side-nav" aria-label="Менюи асосӣ"></nav>
+            <div class="side-foot">
+                <div class="side-user">
+                    <span class="avatar"><svg class="ic" width="15" height="15">
+                            <use href="#i-user"></use>
+                        </svg></span>
+                    <span id="userName" class="side-user-n"></span>
+                </div>
+                <button class="icon-btn" data-act="logout" aria-label="Баромадан" title="Баромадан"><svg class="ic"
+                        width="18" height="18">
+                        <use href="#i-out"></use>
+                    </svg></button>
+            </div>
+        </aside>
+
+        <div class="main">
+            <header class="top">
+                <div class="top-l">
+                    <h1 id="pageTitle"></h1>
+                    <p id="pageSub"></p>
+                </div>
+                <div class="top-r">
+                    <button id="syncBtn" class="icon-btn" data-act="sync" aria-label="Навсозӣ аз ҷадвал"
+                        title="Навсозӣ аз ҷадвал"><svg class="ic" width="18" height="18">
+                            <use href="#i-sync"></use>
+                        </svg></button>
+                    <button class="icon-btn only-phone" data-act="go" data-page="set" aria-label="Танзимот" title="Танзимот"><svg class="ic" width="18" height="18"><use href="#i-gear"></use></svg></button>
+                    <button class="btn sale-solid" data-act="sale"><svg class="ic" width="17" height="17">
+                            <use href="#i-sale"></use>
+                        </svg><span>Фурӯш</span></button>
+                </div>
+            </header>
+            <div id="banner"></div>
+            <main id="view" class="view"></main>
+        </div>
+
+        <button class="fab" data-act="sale"><svg class="ic" width="20" height="20"><use href="#i-sale"></use></svg>Фурӯш</button>
+        <nav id="tabNav" class="tabbar" aria-label="Менюи асосӣ"></nav>
+    </div>
+
+    <div id="modals"></div>
+    <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
+</body>
+
+</html>
