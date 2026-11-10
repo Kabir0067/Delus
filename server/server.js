@@ -314,7 +314,8 @@ function serveFile(req, res, url) {
     const versioned = url.searchParams.has('v') || p.startsWith('/assets/img/');
     const headers = {
         'Content-Type': MIME[ext] || 'application/octet-stream',
-        'Cache-Control': ext === '.html' ? 'no-cache' : versioned ? 'public, max-age=31536000, immutable' : 'public, max-age=3600'
+        // no-transform: Cloudflare ба саҳифа скрипти бегона (analytics) илова намекунад
+        'Cache-Control': ext === '.html' ? 'no-cache, no-transform' : versioned ? 'public, max-age=31536000, immutable' : 'public, max-age=3600'
     };
     let data = fileCache.get(file);
     if (!data || data.mtime !== st.mtimeMs) {
