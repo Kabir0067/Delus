@@ -1032,24 +1032,56 @@ function logout(msg = '') {
     showLogin(msg);
 }
 
+/* Хатои воридшавӣ: паём ва ларзиши кӯтоҳи корт, то корбар фавран бинад */
+function loginFail(text, focus) {
+    const err = $('#loginError'), card = $('#loginForm');
+    err.textContent = text;
+    err.hidden = false;
+    card.classList.remove('shake');
+    void card.offsetWidth;
+    card.classList.add('shake');
+    if (focus) focus.focus();
+}
+
 $('#loginForm').addEventListener('submit', async e => {
     e.preventDefault();
-    const btn = $('#loginBtn'), err = $('#loginError');
-    const user = $('#loginUser').value.trim(), pass = $('#loginPass').value.trim();
+    const btn = $('#loginBtn'), label = $('.lb-t', btn), err = $('#loginError');
+    const userEl = $('#loginUser'), passEl = $('#loginPass');
+    const user = userEl.value.trim(), pass = passEl.value.trim();
     err.hidden = true;
-    if (!user || !pass) { err.textContent = 'Логин ва паролро нависед.'; err.hidden = false; return; }
+    if (!user) return loginFail('Логини худро нависед.', userEl);
+    if (!pass) return loginFail('Пароли худро нависед.', passEl);
     btn.disabled = true;
-    btn.textContent = 'Ворид мешавад…';
+    btn.classList.add('busy');
+    label.textContent = 'Ворид мешавад…';
     try {
         startSession(await serverCall('/login', { user, pass }));
         await enterApp();
     } catch (ex) {
-        err.textContent = errText(ex);
-        err.hidden = false;
+        loginFail(errText(ex), ex.status === 401 ? passEl : null);
+        if (ex.status === 401) passEl.select();
     } finally {
         btn.disabled = false;
-        btn.textContent = 'Ворид шудан';
+        btn.classList.remove('busy');
+        label.textContent = 'Ворид шудан';
     }
+});
+
+/* Паролро нишон додан ё пинҳон кардан */
+$('#pwEye').addEventListener('click', () => {
+    const inp = $('#loginPass'), b = $('#pwEye'), show = inp.type === 'password';
+    inp.type = show ? 'text' : 'password';
+    b.setAttribute('aria-pressed', show);
+    b.setAttribute('aria-label', show ? 'Паролро пинҳон кардан' : 'Паролро нишон додан');
+    inp.focus({ preventScroll: true });
+});
+/* Огоҳӣ: агар ҳарфҳои калон фаъол бошанд, парол нодуруст навишта мешавад */
+['keydown', 'keyup'].forEach(ev => $('#loginPass').addEventListener(ev, e => {
+    if (e.getModifierState) $('#capsWarn').hidden = !e.getModifierState('CapsLock');
+}));
+$('#loginPass').addEventListener('blur', () => { $('#capsWarn').hidden = true; });
+$('#loginUser').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !$('#loginPass').value) { e.preventDefault(); $('#loginPass').focus(); }
 });
 
 function showApp() {

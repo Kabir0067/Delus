@@ -240,15 +240,151 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
     box-shadow: 0 8px 18px -8px rgb(240 152 25 / .8);
 }
 .brand-mark.lg { width: 58px; height: 58px; border-radius: 18px; }
+/* Саҳифаи воридшавӣ: дар компютер ду қисм (бренд + форма), дар телефон бренд боло ва форма поён */
 .login {
-    position: relative; min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px; overflow: hidden;
-    background: radial-gradient(60% 50% at 85% 10%, rgb(247 183 51 / .22), transparent 70%), radial-gradient(50% 50% at 10% 90%, rgb(74 116 245 / .35), transparent 70%), linear-gradient(150deg, var(--navy-1), var(--navy-2));
+    position: relative; min-height: 100dvh; display: grid; place-items: center;
+    padding: max(20px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom));
+    overflow-x: hidden; color: #fff; isolation: isolate;
+    background:
+        radial-gradient(42% 46% at 88% 8%, rgb(247 183 51 / .20), transparent 70%),
+        radial-gradient(48% 52% at 6% 96%, rgb(74 116 245 / .38), transparent 72%),
+        radial-gradient(30% 34% at 52% 48%, rgb(143 99 240 / .14), transparent 70%),
+        linear-gradient(150deg, #081029, var(--navy-2));
 }
-.login-card { position: relative; width: 100%; max-width: 396px; padding: 32px 28px 28px; background: var(--surface); border-radius: 24px; box-shadow: var(--shadow-l); }
-.login-card h1 { margin-top: 16px; font-size: 26px; font-weight: 700; letter-spacing: -.02em; }
-.login-sub { margin: 2px 0 24px; color: var(--ink-3); }
-.login-card .form-err { margin-top: 14px; }
-.login-card .btn { margin-top: 20px; }
+/* нозук: тӯри хатҳо, ки ба канорҳо гум мешавад */
+.login::before {
+    content: ''; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+    background-image: linear-gradient(rgb(255 255 255 / .045) 1px, transparent 1px), linear-gradient(90deg, rgb(255 255 255 / .045) 1px, transparent 1px);
+    background-size: 44px 44px;
+    -webkit-mask-image: radial-gradient(70% 60% at 50% 40%, #000, transparent 78%); mask-image: radial-gradient(70% 60% at 50% 40%, #000, transparent 78%);
+}
+.login-wrap {
+    width: 100%; max-width: 1040px; display: grid; grid-template-columns: minmax(0, 1.08fr) minmax(0, 440px);
+    align-items: stretch; gap: 0;
+    border-radius: 28px; overflow: hidden;
+    background: rgb(255 255 255 / .04); border: 1px solid rgb(255 255 255 / .09);
+    box-shadow: 0 40px 100px -30px rgb(0 0 0 / .65);
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+    animation: loginIn .55s cubic-bezier(.2, .8, .2, 1) both;
+}
+@keyframes loginIn { from { opacity: 0; transform: translateY(14px) scale(.985); } }
+
+.login-hero { display: flex; flex-direction: column; gap: 32px; padding: 40px 44px; min-width: 0; }
+.lh-brand { display: flex; align-items: center; gap: 12px; }
+.lh-brand b { display: block; font-size: 17px; letter-spacing: .02em; }
+.lh-brand small { display: block; font-size: 12.5px; color: rgb(255 255 255 / .6); }
+.lh-body { margin: auto 0; }
+.lh-body h2 { font-size: clamp(26px, 3vw, 36px); line-height: 1.15; font-weight: 700; letter-spacing: -.025em; }
+.lh-body p { margin-top: 14px; max-width: 30em; font-size: 15.5px; line-height: 1.6; color: rgb(255 255 255 / .7); }
+.lh-list { list-style: none; margin: 28px 0 0; padding: 0; display: grid; gap: 12px; }
+.lh-list li {
+    display: flex; align-items: center; gap: 14px; padding: 12px 14px;
+    border-radius: 16px; background: rgb(255 255 255 / .05); border: 1px solid rgb(255 255 255 / .07);
+}
+.lh-list b { display: block; font-size: 14.5px; font-weight: 600; }
+.lh-list small { display: block; font-size: 13px; color: rgb(255 255 255 / .6); }
+.lh-i {
+    display: grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 12px;
+    background: linear-gradient(145deg, rgb(255 212 94 / .22), rgb(240 152 25 / .12)); color: var(--gold);
+    box-shadow: inset 0 0 0 1px rgb(247 183 51 / .22);
+}
+.lh-foot { font-size: 12.5px; color: rgb(255 255 255 / .45); }
+
+.login-card {
+    position: relative; display: flex; flex-direction: column; justify-content: center; min-width: 0;
+    padding: 44px 40px 36px; background: var(--surface); color: var(--ink);
+}
+.login-card h1 { font-size: 28px; font-weight: 700; letter-spacing: -.025em; }
+.login-sub { margin: 6px 0 28px; color: var(--ink-3); font-size: 15px; }
+.login-card .field + .field { margin-top: 16px; }
+.login-card .field-l { font-size: 13.5px; color: var(--ink-2); }
+
+/* майдон бо нишона: нишона дар чап, тугмаи чашм дар рост */
+.in-ic { position: relative; display: block; }
+.in-ic > .ic { position: absolute; left: 14px; top: 50%; translate: 0 -50%; color: var(--ink-3); pointer-events: none; transition: color .15s; }
+.login-card .in-ic input {
+    min-height: 52px; padding-left: 44px; border-radius: 14px; font-weight: 500;
+    background: var(--surface-2); border: 1.5px solid var(--line);
+}
+.login-card .in-ic input::placeholder { color: var(--ink-3); font-weight: 400; opacity: .85; transition: opacity .15s; }
+.login-card .in-ic input:focus::placeholder { opacity: .45; }
+.login-card .in-ic input:hover { border-color: color-mix(in srgb, var(--brand) 35%, var(--line)); }
+.login-card .in-ic input:focus { border-color: var(--brand); box-shadow: 0 0 0 4px var(--brand-bg); background: var(--surface); }
+.in-ic:focus-within > .ic { color: var(--brand); }
+#loginPass { padding-right: 50px; }
+.pw-eye {
+    position: absolute; right: 6px; top: 50%; translate: 0 -50%;
+    display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 10px;
+    background: transparent; color: var(--ink-3); cursor: pointer; transition: background .15s, color .15s;
+}
+.pw-eye:hover { background: var(--brand-bg); color: var(--brand); }
+.pw-eye:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.pw-eye .eye-off, .pw-eye[aria-pressed="true"] .eye-on { display: none; }
+.pw-eye[aria-pressed="true"] .eye-off { display: block; }
+.caps { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 13px; font-weight: 500; color: var(--amber); }
+.caps::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+.login-card .form-err { display: flex; gap: 9px; align-items: flex-start; margin-top: 16px; line-height: 1.45; }
+.login-card .form-err::before {
+    content: ''; flex: none; width: 17px; height: 17px; margin-top: 1px; background: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7.5v5.5M12 16.5h.01'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M12 7.5v5.5M12 16.5h.01'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.login-card.shake { animation: shake .4s; }
+@keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+
+.login-btn { position: relative; margin-top: 24px; min-height: 54px; gap: 10px; font-size: 16px; font-weight: 600; border-radius: 14px; }
+.login-btn .lb-arrow { transition: transform .2s; }
+.login-btn:hover .lb-arrow { transform: translateX(3px); }
+.lb-spin { display: none; width: 18px; height: 18px; border-radius: 50%; border: 2.5px solid rgb(255 255 255 / .35); border-top-color: #fff; animation: spin .7s linear infinite; }
+.login-btn.busy .lb-spin { display: block; }
+.login-btn.busy .lb-arrow { display: none; }
+.login-btn.busy { opacity: .9; }
+.login-safe { display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 20px; font-size: 13px; color: var(--ink-3); text-align: center; }
+.login-safe .ic { color: var(--green); flex: none; }
+
+/* планшет ва телефон: бренд боло, форма дар корти алоҳида */
+@media (max-width: 899px) {
+    .login { place-items: start center; }
+    .login-wrap { grid-template-columns: minmax(0, 1fr); max-width: 460px; background: none; border: 0; box-shadow: none; border-radius: 0; overflow: visible; -webkit-backdrop-filter: none; backdrop-filter: none; }
+    .login-hero { gap: 18px; padding: 12px 6px 24px; }
+    .lh-body h2 { font-size: clamp(23px, 6.4vw, 28px); }
+    .lh-body p { font-size: 14.5px; margin-top: 10px; }
+    .lh-list, .lh-foot { display: none; }
+    .login-card { padding: 30px 22px 24px; border-radius: 24px; box-shadow: 0 30px 70px -24px rgb(0 0 0 / .6); }
+    .login-card h1 { font-size: 24px; }
+    .login-sub { margin-bottom: 22px; }
+}
+@media (max-width: 899px) and (min-height: 760px) { .login { place-items: center; } }
+@media (max-width: 360px) {
+    .login { padding-left: 12px; padding-right: 12px; }
+    .login-hero { padding-bottom: 18px; }
+    .lh-body p { display: none; }
+    .login-card { padding: 26px 16px 20px; }
+    .login-card .in-ic input { padding-left: 40px; }
+    .in-ic > .ic { left: 12px; }
+    #loginPass { padding-right: 44px; }
+    .pw-eye { right: 3px; width: 38px; }
+}
+/* телефони хобида: бренд дар чап, форма дар рост — ҳама дар як экран */
+@media (max-height: 500px) and (orientation: landscape) {
+    .login { place-items: center; padding-top: 12px; padding-bottom: 12px; }
+    .login-wrap { grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); max-width: 780px; gap: 20px; align-items: center; }
+    .login-hero { padding: 0; gap: 14px; }
+    .lh-body p { display: none; }
+    .lh-body h2 { font-size: 22px; }
+    .login-card { padding: 18px 22px; border-radius: 20px; }
+    .login-card h1 { font-size: 20px; }
+    .login-sub { margin: 2px 0 12px; font-size: 14px; }
+    .login-card .field + .field { margin-top: 10px; }
+    .login-card .field-l { margin-bottom: 4px; }
+    .login-card .in-ic input { min-height: 44px; }
+    .login-btn { margin-top: 14px; min-height: 46px; }
+    .login-safe { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .login-wrap, .login-card.shake { animation: none; }
+}
 
 /* ---------- сохтори барнома ---------- */
 .app { min-height: 100dvh; }
