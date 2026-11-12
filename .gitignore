@@ -7,3 +7,5 @@ node_modules/
 *.log
 # кӯҳна (Google Apps Script), дигар истифода намешавад
 code.js
+# версияи насбшуда (hook-и git менависад)
+VERSION

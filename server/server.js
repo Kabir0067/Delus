@@ -35,6 +35,11 @@ const KEY_FILE = path.resolve(__dirname, conf('GOOGLE_KEY_FILE', 'secret/service
 const DATA_DIR = path.resolve(__dirname, conf('DATA_DIR', 'data'));
 const SESSION_DAYS = +conf('SESSION_DAYS', 30);
 
+const TOO_MANY = 'Кӯшиш аз ҳад зиёд шуд. Пас аз 10 дақиқа боз кӯшиш кунед.';
+const GOOGLE_DOWN = 'Ҷадвали Google ҳоло ҷавоб намедиҳад. Пас аз чанд сония боз кӯшиш кунед.';
+// версияи ҷорӣ: hook-и git онро ҳангоми насб менависад
+const VERSION = (() => { try { return fs.readFileSync(path.join(ROOT, 'VERSION'), 'utf8').trim(); } catch (e) { return 'dev'; } })();
+
 const SHEETS = new Set(['Products', 'Locations', 'Transactions', 'Settings', 'Images', 'Expenses', 'Debts', 'DebtPayments', 'Stock_Report']);
 const GOOGLE = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}`;
 
@@ -66,12 +71,31 @@ async function googleToken() {
     gToken = { t: j.access_token, exp: now + (j.expires_in || 3600) };
     return gToken.t;
 }
-async function google(pathAndQuery, opts = {}) {
+/* ---------- хатои шабака ----------
+   Пайваст ба Google гоҳо як лаҳза намешавад (DNS, пайваст). Хондан бехатар такрор мешавад.
+   Сабт танҳо вақте такрор мешавад, ки дархост умуман ба Google нарафтааст — то сатр ду бор сабт нашавад. */
+const NOT_SENT = new Set(['ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'ENETUNREACH', 'EHOSTUNREACH', 'UND_ERR_CONNECT_TIMEOUT']);
+const netCode = e => (e && e.cause && (e.cause.code || e.cause.name)) || (e && e.name) || 'unknown';
+async function withRetry(what, fn, safe) {
     for (let attempt = 0; ; attempt++) {
+        try { return await fn(); }
+        catch (e) {
+            const code = netCode(e);
+            if (attempt >= 3 || !(safe || NOT_SENT.has(code))) { log('google', what, 'failed:', code); throw e; }
+            log('google', what, 'retry', attempt + 1, code);
+            await new Promise(r => setTimeout(r, 400 * 2 ** attempt));
+        }
+    }
+}
+
+async function google(pathAndQuery, opts = {}) {
+    const read = !opts.method || opts.method === 'GET';
+    for (let attempt = 0; ; attempt++) {
+        const token = await withRetry('token', googleToken, true);
         // Google ҷавоб надиҳад, дархост то абад овезон намемонад
-        const r = await fetch(GOOGLE + pathAndQuery, {
-            ...opts, signal: AbortSignal.timeout(30000), headers: { Authorization: 'Bearer ' + await googleToken(), ...(opts.body ? { 'Content-Type': 'application/json' } : {}) }
-        });
+        const r = await withRetry(read ? 'read' : 'write', () => fetch(GOOGLE + pathAndQuery, {
+            ...opts, signal: AbortSignal.timeout(30000), headers: { Authorization: 'Bearer ' + token, ...(opts.body ? { 'Content-Type': 'application/json' } : {}) }
+        }), read);
         if (r.status === 401 && attempt < 1) { gToken = null; continue; }
         const text = await r.text();
         return { status: r.status, text };
@@ -131,9 +155,17 @@ function readBody(req, limit = 4 * 1024 * 1024) {
         req.on('error', rej);
     });
 }
+/* Ҷавобҳои калон (маълумоти ҷадвал ~250 КБ) фишурда мешаванд — дар интернети мобилӣ 5–8 маротиба тезтар */
 function send(res, status, body, headers = {}) {
-    const data = typeof body === 'string' ? body : JSON.stringify(body);
-    res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...headers });
+    let data = Buffer.from(typeof body === 'string' ? body : JSON.stringify(body));
+    const h = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', Vary: 'Accept-Encoding', ...headers };
+    const accept = (res.req && res.req.headers['accept-encoding']) || '';
+    if (data.length > 1024) {
+        if (/\bbr\b/.test(accept)) { data = zlib.brotliCompressSync(data, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 4 } }); h['Content-Encoding'] = 'br'; }
+        else if (/\bgzip\b/.test(accept)) { data = zlib.gzipSync(data, { level: 6 }); h['Content-Encoding'] = 'gzip'; }
+    }
+    h['Content-Length'] = data.length;
+    res.writeHead(status, h);
     res.end(data);
 }
 const sheetOf = range => String(range).split('!')[0].replace(/^'|'$/g, '').trim();
@@ -238,10 +270,10 @@ async function proxy(req, res, rest, search) {
 /* ---------- /api ---------- */
 async function api(req, res, url) {
     const p = url.pathname;
-    if (p === '/api/health') return send(res, 200, { ok: true });
+    if (p === '/api/health') return send(res, 200, { ok: true, version: VERSION, uptime: Math.round(process.uptime()) });
 
     if (p === '/api/login' && req.method === 'POST') {
-        if (tooMany(req)) return send(res, 429, { error: 'Кӯшиш зиёд шуд. 10 дақиқа баъд боз кӯшиш кунед.' });
+        if (tooMany(req)) return send(res, 429, { error: TOO_MANY });
         const { user = '', pass = '' } = JSON.parse(await readBody(req, 4096) || '{}');
         const found = (await readLogins()).find(l => l.user.toLowerCase() === String(user).trim().toLowerCase());
         if (!found || !safeEq(found.pass, String(pass).trim())) {
@@ -250,11 +282,11 @@ async function api(req, res, url) {
         }
         const token = newSession(found.user.toLowerCase());
         log('login', found.user, clientIp(req));
-        return send(res, 200, { user: found.user.toLowerCase() }, { 'Set-Cookie': cookie(req, token, SESSION_DAYS * 86400) });
+        return send(res, 200, { user: found.user.toLowerCase(), sheet: SHEET_ID }, { 'Set-Cookie': cookie(req, token, SESSION_DAYS * 86400) });
     }
 
     const s = readSession(req);
-    if (p === '/api/me') return send(res, 200, { user: s ? s.user : null });
+    if (p === '/api/me') return send(res, 200, s ? { user: s.user, sheet: SHEET_ID } : { user: null });
     if (!s) return send(res, 401, { error: 'auth' });
 
     if (p === '/api/logout' && req.method === 'POST') {
@@ -263,17 +295,18 @@ async function api(req, res, url) {
     }
 
     if (p === '/api/password' && req.method === 'POST') {
+        if (tooMany(req)) return send(res, 429, { error: TOO_MANY });
         const { current = '', login = '', pass = '' } = JSON.parse(await readBody(req, 4096) || '{}');
         const list = await readLogins();
         const me = list.find(l => l.user.toLowerCase() === s.user);
         if (!me) return send(res, 400, { error: 'Логини шумо дар ҷадвал ёфт нашуд.' });
-        if (!safeEq(me.pass, String(current).trim())) return send(res, 400, { error: 'Пароли ҳозира нодуруст аст.' });
+        if (!safeEq(me.pass, String(current).trim())) { failed(req); return send(res, 400, { error: 'Пароли ҳозира нодуруст аст.' }); }
         const name = String(login).trim(), pw = String(pass).trim() || me.pass;
         if (!name) return send(res, 400, { error: 'Логинро нависед.' });
         if (pw.length < 4) return send(res, 400, { error: 'Парол бояд ақаллан 4 аломат бошад.' });
         if (list.some(l => l !== me && l.user.toLowerCase() === name.toLowerCase())) return send(res, 400, { error: 'Ин логин банд аст.' });
         const r = await google(`/values/${encodeURIComponent(`login!A${me.row}:B${me.row}`)}?valueInputOption=RAW`, { method: 'PUT', body: JSON.stringify({ values: [[name, pw]] }) });
-        if (r.status !== 200) return send(res, 502, { error: 'Сабт нашуд.' });
+        if (r.status !== 200) return send(res, 502, { error: 'Парол сабт нашуд. Боз кӯшиш кунед.' });
         // ҳамаи дастгоҳҳои дигари ин корбар аз барнома мебароянд
         for (const [k, v] of Object.entries(sessions)) if (v.user === s.user && k !== s.key) delete sessions[k];
         sessions[s.key].user = name.toLowerCase();
@@ -292,43 +325,78 @@ async function api(req, res, url) {
     send(res, 404, { error: 'not found' });
 }
 
-/* ---------- файлҳои сайт ---------- */
+/* ---------- файлҳои сайт ----------
+   - 6 файли JS ба як app.js ҷамъ мешаванд: дар интернети суст як дархост аз шаш дархост хеле тезтар аст;
+   - дар index.html ?v=… худкор аз мундариҷаи файл ҳисоб мешавад, бинобар ин пас аз ҳар навсозӣ
+     браузер ҳатман файли навро мегирад ва то он вақт файли кӯҳнаро аз кэш истифода мебарад;
+   - матн бо brotli ё gzip фишурда мешавад. */
 const MIME = {
     '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
     '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json', '.json': 'application/json',
-    '.webp': 'image/webp', '.jpg': 'image/jpeg', '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8'
+    '.webp': 'image/webp', '.jpg': 'image/jpeg', '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8', '.woff2': 'font/woff2'
 };
-const COMPRESS = new Set(['.html', '.js', '.css', '.svg', '.webmanifest', '.json']);
+const COMPRESS = new Set(['.html', '.js', '.css', '.svg', '.webmanifest', '.json', '.txt']);
+const BUNDLE = 'assets/js/app.js';
+const JS_ORDER = ['config', 'core', 'ui', 'pages', 'debts', 'flows'].map(n => `assets/js/${n}.js`);
+const REF = /(assets\/[\w./-]+)\?v=\w+/g;
 const fileCache = new Map();
 
+function packed(rel, stamp, build) {
+    let d = fileCache.get(rel);
+    if (d && d.stamp === stamp) return d;
+    const raw = build(), ext = path.extname(rel).toLowerCase(), zip = COMPRESS.has(ext);
+    d = {
+        stamp, raw, ext, hash: crypto.createHash('sha1').update(raw).digest('hex').slice(0, 10),
+        gz: zip ? zlib.gzipSync(raw, { level: 9 }) : null,
+        br: zip ? zlib.brotliCompressSync(raw, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 11, [zlib.constants.BROTLI_PARAM_SIZE_HINT]: raw.length } }) : null
+    };
+    fileCache.set(rel, d);
+    return d;
+}
+
+/* rel: роҳи файл аз решаи сайт, масалан assets/css/style.css. Агар файл набошад, null. */
+function asset(rel) {
+    try {
+        if (rel === BUNDLE) {
+            const files = JS_ORDER.map(x => path.join(ROOT, x));
+            return packed(rel, files.map(x => fs.statSync(x).mtimeMs).join('|'),
+                () => Buffer.concat(files.flatMap(x => [fs.readFileSync(x), Buffer.from('\n;\n')])));
+        }
+        const file = path.join(ROOT, rel), st = fs.statSync(file);
+        if (!st.isFile()) return null;
+        if (rel === 'index.html') {
+            const html = fs.readFileSync(file, 'utf8');
+            const refs = [...html.matchAll(REF)].map(m => (asset(m[1]) || {}).hash).join('|');
+            return packed(rel, st.mtimeMs + '|' + refs,
+                () => Buffer.from(html.replace(REF, (all, a) => { const d = asset(a); return d ? `${a}?v=${d.hash}` : all; })));
+        }
+        return packed(rel, st.mtimeMs, () => fs.readFileSync(file));
+    } catch (e) { return null; }
+}
+
 function serveFile(req, res, url) {
-    let p = decodeURIComponent(url.pathname);
+    let p;
+    try { p = decodeURIComponent(url.pathname); } catch (e) { return notFound(res); }
     if (p === '/') p = '/index.html';
     const okPath = p === '/index.html' || p === '/manifest.webmanifest' || p === '/robots.txt' || p.startsWith('/assets/');
-    const file = path.join(ROOT, p);
-    if (!okPath || !file.startsWith(ROOT + path.sep) || p.includes('..')) return notFound(res);
-    let st;
-    try { st = fs.statSync(file); } catch (e) { return notFound(res); }
-    if (!st.isFile()) return notFound(res);
-    const ext = path.extname(file).toLowerCase();
-    const versioned = url.searchParams.has('v') || p.startsWith('/assets/img/');
+    if (!okPath || p.includes('..') || p.includes(String.fromCharCode(0)) || !path.join(ROOT, p).startsWith(ROOT + path.sep)) return notFound(res);
+    const d = asset(p.slice(1));
+    if (!d) return notFound(res);
+    const versioned = url.searchParams.has('v') || p.startsWith('/assets/img/') || p.startsWith('/assets/fonts/');
     const headers = {
-        'Content-Type': MIME[ext] || 'application/octet-stream',
+        'Content-Type': MIME[d.ext] || 'application/octet-stream',
+        ETag: `"${d.hash}"`,
         // no-transform: Cloudflare ба саҳифа скрипти бегона (analytics) илова намекунад
-        'Cache-Control': ext === '.html' ? 'no-cache, no-transform' : versioned ? 'public, max-age=31536000, immutable' : 'public, max-age=3600'
+        'Cache-Control': d.ext === '.html' ? 'no-cache, no-transform' : versioned ? 'public, max-age=31536000, immutable' : 'public, max-age=3600',
+        ...(d.gz ? { Vary: 'Accept-Encoding' } : {})
     };
-    let data = fileCache.get(file);
-    if (!data || data.mtime !== st.mtimeMs) {
-        const raw = fs.readFileSync(file);
-        data = { mtime: st.mtimeMs, raw, gz: COMPRESS.has(ext) ? zlib.gzipSync(raw, { level: 9 }) : null };
-        fileCache.set(file, data);
-    }
-    if (data.gz && /\bgzip\b/.test(req.headers['accept-encoding'] || '')) {
-        res.writeHead(200, { ...headers, 'Content-Encoding': 'gzip', Vary: 'Accept-Encoding' });
-        return res.end(req.method === 'HEAD' ? undefined : data.gz);
-    }
+    if (req.headers['if-none-match'] === headers.ETag) { res.writeHead(304, headers); return res.end(); }
+    const accept = req.headers['accept-encoding'] || '';
+    const [body, enc] = d.br && /\bbr\b/.test(accept) ? [d.br, 'br'] : d.gz && /\bgzip\b/.test(accept) ? [d.gz, 'gzip'] : [d.raw, ''];
+    if (enc) headers['Content-Encoding'] = enc;
+    headers['Content-Length'] = body.length;
     res.writeHead(200, headers);
-    res.end(req.method === 'HEAD' ? undefined : data.raw);
+    res.end(req.method === 'HEAD' ? undefined : body);
 }
 function notFound(res) {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -340,7 +408,7 @@ const SECURITY = {
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'same-origin',
     'Permissions-Policy': 'camera=(self), microphone=(), geolocation=()',
-    'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob: https:; connect-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob: https:; connect-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 };
 
 /* ---------- тозакунӣ: сессияҳои кӯҳна ва кӯшишҳои воридшавӣ хотираро пур намекунанд ---------- */
@@ -369,8 +437,11 @@ async function backup() {
     log('backup', path.basename(file));
 }
 const runBackup = () => backup().catch(e => log('backup failed', e.message));
-setTimeout(runBackup, 60e3).unref();
-setInterval(runBackup, 3600e3).unref();
+// BACKUP=off танҳо барои санҷишҳо
+if (conf('BACKUP', 'on') !== 'off') {
+    setTimeout(runBackup, 60e3).unref();
+    setInterval(runBackup, 3600e3).unref();
+}
 
 const server = http.createServer(async (req, res) => {
     for (const [k, v] of Object.entries(SECURITY)) res.setHeader(k, v);
@@ -380,8 +451,10 @@ const server = http.createServer(async (req, res) => {
         if (req.method !== 'GET' && req.method !== 'HEAD') return notFound(res);
         serveFile(req, res, url);
     } catch (e) {
-        log('error', req.method, req.url, e.message);
-        if (!res.headersSent) send(res, e.status || 500, { error: 'server' });
+        log('error', req.method, req.url.split('?')[0], netCode(e), e.message);
+        // хатои шабака бо Google: корбар паёми фаҳмо мегирад, на «хатои сервер»
+        const net = !e.status && (e.name === 'TimeoutError' || /fetch failed|google token/i.test(e.message));
+        if (!res.headersSent) send(res, e.status || (net ? 503 : 500), { error: net ? GOOGLE_DOWN : 'server' });
         else res.end();
     }
 }).listen(PORT, HOST, () => log(`DELUS: http://${HOST}:${PORT}`));

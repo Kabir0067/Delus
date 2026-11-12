@@ -15,9 +15,8 @@ const COLS = {
     DebtPayments: ['id', 'debt_id', 'amount', 'date', 'method', 'note', 'created_at']
 };
 const DATE_COLS = new Set(['date', 'created_at', 'updated_at', 'due_date']);
-/* Дар сервер калид нест ва варақи login ба браузер намерасад */
-const SERVER = !!CONFIG.api;
-const RANGES = ['Products!A:Q', 'Locations!A:D', 'Transactions!A:O', 'Settings!A:C', 'Expenses!A:G', 'Debts!A:K', 'DebtPayments!A:G', ...(SERVER ? [] : ['login!A:B'])];
+/* Браузер калиди Google надорад: ҳамаи дархостҳо тавассути сервери худи барнома мераванд. Варақи login ба браузер намерасад. */
+const RANGES = ['Products!A:Q', 'Locations!A:D', 'Transactions!A:O', 'Settings!A:C', 'Expenses!A:G', 'Debts!A:K', 'DebtPayments!A:G'];
 const UNITS = ['дона', 'метр', 'кг', 'қуттӣ', 'ҷуфт', 'литр'];
 const TZ_HOURS = 5;          // Тоҷикистон: UTC+5, бе соати тобистона
 const PAGE_SIZE = 60;
@@ -111,92 +110,46 @@ const hasAll = (text, query) => { const h = norm(text); return norm(query).split
 /* ==================================================================
    ПАЙВАСТ БО GOOGLE SHEETS
    ================================================================== */
-const BASE = SERVER ? `${CONFIG.api}/sheets` : `https://sheets.googleapis.com/v4/spreadsheets/${CONFIG.spreadsheetId}`;
+const BASE = `${CONFIG.api}/sheets`;
 const READ_OPTS = 'valueRenderOption=UNFORMATTED_VALUE&dateTimeRenderOption=SERIAL_NUMBER';
 const MSG = {
     net: 'Интернет нест. Пайвастро санҷед ва боз кӯшиш кунед.',
-    clock: 'Соат ё санаи дастгоҳ нодуруст аст. Онро дуруст кунед.',
-    access: 'Дастрасӣ ба ҷадвал нест.',
+    access: 'Барнома ба ҷадвал дастрасӣ надорад. Ба соҳиби барнома хабар диҳед.',
     busy: 'Ҷадвал ҳоло банд аст. Пас аз як дақиқа боз кӯшиш кунед.',
-    secure: 'Барнома бояд аз суроғаи бехатар (https) кушода шавад.',
     fail: 'Амал иҷро нашуд. Боз кӯшиш кунед.',
-    noServer: 'Сервери барнома кор намекунад. Барномаро бо файли start.cmd оғоз кунед ва аз суроғаи http://localhost:8080 кушоед.'
+    noServer: 'Сервери барнома ҳоло ҷавоб намедиҳад. Пас аз чанд дақиқа саҳифаро аз нав кушоед.'
 };
 /* Агар саҳифа на аз сервери барнома, балки аз сервери оддии файлҳо кушода шуда бошад, /api вуҷуд надорад */
 const NO_API = new Set([404, 405, 501]);
 const known = text => Object.assign(new Error(text), { known: true });
 
-let signKey = null;
-let accessToken = null;
-try { accessToken = JSON.parse(localStorage.getItem('delus.tok')); } catch (e) { }
-
-const b64url = input => {
-    const bytes = typeof input === 'string' ? new TextEncoder().encode(input) : new Uint8Array(input);
-    let bin = '';
-    for (const b of bytes) bin += String.fromCharCode(b);
-    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-};
-
-async function getToken() {
-    const now = Math.floor(Date.now() / 1000);
-    if (accessToken && now < accessToken.exp - 60) return accessToken.t;
-    if (!crypto.subtle) throw known(MSG.secure);
-
-    if (!signKey) {
-        const raw = Uint8Array.from(atob(CONFIG.privateKeyPem.replace(/-----[^-]+-----|\s/g, '')), c => c.charCodeAt(0));
-        signKey = await crypto.subtle.importKey('pkcs8', raw, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
-    }
-    const unsigned = b64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' })) + '.' + b64url(JSON.stringify({
-        iss: CONFIG.clientEmail,
-        scope: 'https://www.googleapis.com/auth/spreadsheets',
-        aud: 'https://oauth2.googleapis.com/token',
-        iat: now, exp: now + 3600
-    }));
-    const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', signKey, new TextEncoder().encode(unsigned));
-
-    const r = await fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'grant_type=' + encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer') + '&assertion=' + unsigned + '.' + b64url(sig)
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) throw known(/jwt|token must be/i.test(j.error_description || '') ? MSG.clock : MSG.access);
-
-    accessToken = { t: j.access_token, exp: now + (j.expires_in || 3600) };
-    try { localStorage.setItem('delus.tok', JSON.stringify(accessToken)); } catch (e) { }
-    return accessToken.t;
-}
+try { localStorage.removeItem('delus.tok'); } catch (e) { }   // аз версияи кӯҳна мондааст
 
 /* retry: танҳо амалҳое такрор мешаванд, ки дубора сабт намекунанд */
 async function gFetch(url, opts = {}, retry = true, attempt = 0) {
     let r;
     try {
-        const ct = opts.body ? { 'Content-Type': 'application/json' } : {};
-        r = SERVER
-            ? await fetch(url, { ...opts, credentials: 'same-origin', headers: ct })
-            : await fetch(url, { ...opts, headers: { Authorization: `Bearer ${await getToken()}`, ...ct } });
+        r = await fetch(url, { ...opts, credentials: 'same-origin', headers: opts.body ? { 'Content-Type': 'application/json' } : {} });
     } catch (e) {
         if (e.known) throw e;
         if (retry && attempt < 2) { await sleep(600 * (attempt + 1)); return gFetch(url, opts, retry, attempt + 1); }
         throw known(MSG.net);
     }
-    if (SERVER && NO_API.has(r.status) && !/json/.test(r.headers.get('content-type') || '')) throw known(MSG.noServer);
-    if (SERVER && r.status === 401) {
+    if (NO_API.has(r.status) && !/json/.test(r.headers.get('content-type') || '')) throw known(MSG.noServer);
+    if (r.status === 401) {
         if (S.user) logout('Вақти воридшавӣ гузашт. Аз нав ворид шавед.');
         throw known('Аз нав ворид шавед.');
     }
-    if (r.status === 401 && attempt < 1) {
-        accessToken = null;
-        return gFetch(url, opts, retry, attempt + 1);
-    }
-    if (attempt < 5 && (r.status === 429 || (retry && r.status >= 500))) {
+    /* квотаи Google (429) дар як дақиқа барқарор мешавад — 5 кӯшиш; хатои сервер — 3 кӯшиш (~10 сония), то корбар дароз интизор нашавад */
+    if ((r.status === 429 && attempt < 5) || (retry && r.status >= 500 && attempt < 3)) {
         await sleep(1500 * 2 ** attempt);
         return gFetch(url, opts, retry, attempt + 1);
     }
     const j = await r.json().catch(() => ({}));
     if (!r.ok) {
-        console.error('Sheets', r.status, j.error && j.error.message);
-        throw known(r.status === 403 ? MSG.access : r.status === 429 ? MSG.busy : MSG.fail);
+        console.error('Sheets', r.status, j.error && (j.error.message || j.error));
+        /* сервер барои хатои пайваст бо Google паёми тайёр мефиристад */
+        throw known(typeof j.error === 'string' && j.error !== 'server' ? j.error : r.status === 403 ? MSG.access : r.status === 429 ? MSG.busy : MSG.fail);
     }
     return j;
 }
@@ -310,7 +263,7 @@ const Local = {
    ҲОЛАТИ БАРНОМА
    ================================================================== */
 const S = {
-    user: null, fp: '',
+    user: null, sheet: '',
     products: [], locations: [], tx: [], txSorted: [], exp: [], debts: [], pays: [],
     rep: { tab: 'all', k: 'month', from: '', to: '', loc: '', cat: '', q: '', ecat: '' }, homeK: 'today', fOpen: false, csv: null,
     heads: {}, cfg: { low_stock_default: 10, company_name: 'DELUS', currency: 'сомонӣ' },
@@ -438,9 +391,6 @@ function applyData([p, l, t, c, e, d, dp]) {
     reindex();
 }
 
-const sha = async s => [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)))].map(b => b.toString(16).padStart(2, '0')).join('');
-const fingerprint = (u, p) => sha(`delus|${String(u).trim().toLowerCase()}|${String(p).trim()}`);
-
 /* Маълумотро аз ҷадвал мехонад. Агар ҳангоми хондан сабти нав шуда бошад, натиҷаи кӯҳна партофта мешавад. */
 let syncing = null;
 function sync() {
@@ -453,11 +403,6 @@ function sync() {
                 const seq = S.seq;
                 const data = await DB.batchGet(RANGES);
                 if (seq !== S.seq) continue;
-                const logins = SERVER ? null : data.pop();
-                if (S.user && !SERVER) {
-                    const ok = await Promise.all(logins.slice(1).map(r => fingerprint(r[0], r[1])));
-                    if (!ok.includes(S.fp)) { logout('Логин ё парол иваз шудааст. Аз нав ворид шавед.'); return; }
-                }
                 const sig = JSON.stringify(data);
                 if (sig !== S.sig) {
                     S.sig = sig;
@@ -504,8 +449,6 @@ function drawBanner() {
    ================================================================== */
 const wrote = () => { S.seq++; reindex(); refresh(); syncSoon(); };
 
-const maxId = rows => rows.reduce((m, r, i) => i === 0 ? m : Math.max(m, parseInt(r[0], 10) || 0), 0);
-
 /* Як ё якчанд сатри амалиёт. Дар ду дастгоҳ якбора сабт шавад ҳам, рақамҳо такрор намемонанд. */
 async function addTx(lines, { receipt = false } = {}) {
     const first = await nextIdOf('Transactions', S.tx, lines.length);
@@ -518,30 +461,10 @@ async function addTx(lines, { receipt = false } = {}) {
         created_at: nowStr(),
         receipt_code: l.receipt_code || rc
     }));
-    const res = await DB.append('Transactions', recs.map(r => toRow('Transactions', r)));
+    await DB.append('Transactions', recs.map(r => toRow('Transactions', r)));
     S.tx.push(...recs);
     wrote();
-    /* бе сервер рақам дар браузер ҳисоб мешавад, бинобар ин такрор санҷида мешавад; бо сервер рақам ҳамеша ягона аст */
-    if (!SERVER) fixDuplicateIds(recs, res).catch(e => console.error(e));
     return recs;
-}
-
-async function fixDuplicateIds(recs, res) {
-    const m = /!\D+(\d+)/.exec(res.updates && res.updates.updatedRange || '');
-    if (!m) return;
-    const start = +m[1];
-    const idCol = colName(head('Transactions').indexOf('id'));
-    const rows = await DB.get(`Transactions!${idCol}:${idCol}`);
-    const before = new Set(rows.slice(1, start - 1).map(r => String(r[0])));
-    if (!recs.some(r => before.has(String(r.id)))) return;
-    let next = maxId(rows) + 1;
-    S.seq++;
-    for (let i = 0; i < recs.length; i++, next++) {
-        recs[i].id = next;
-        recs[i].transaction_code = 'TR-' + pad5(next);
-        await DB.setFields('Transactions', start + i, { id: next, transaction_code: recs[i].transaction_code });
-    }
-    syncSoon();
 }
 
 async function updateTx(x, changes) {
@@ -560,12 +483,7 @@ async function deleteTx(x) {
 }
 
 async function addProduct(rec) {
-    let id;
-    if (SERVER) id = await nextIdOf('Products', S.products);
-    else {
-        const a = await DB.batchGet(['Products!A:A', 'Transactions!E:E']);
-        id = Math.max(maxId(a[0]), maxId(a[1]), ...S.products.map(p => num(p.id))) + 1;
-    }
+    const id = await nextIdOf('Products', S.products);
     const p = {
         ...rec, id,
         product_code: rec.product_code || 'DL-' + pad5(id),
@@ -633,11 +551,9 @@ async function deleteExpense(e) {
 }
 
 /* ---------- қарз: сабт ---------- */
-/* Рақами нав. Бо сервер рақамро сервер медиҳад, то ду дастгоҳ як рақам нагиранд. n: чанд рақами пайдарпай */
+/* Рақами нав: сервер медиҳад, то ду дастгоҳ ҳеҷ гоҳ як рақам нагиранд. n: чанд рақами пайдарпай */
 async function nextIdOf(sheet, local, n = 1) {
-    if (SERVER) return (await serverCall('/ids', { sheet, n })).first;
-    const c = colName(head(sheet).indexOf('id'));
-    return Math.max(maxId(await DB.get(`${sheet}!${c}:${c}`)), ...local.map(x => num(x.id)), 0) + 1;
+    return (await serverCall('/ids', { sheet, n })).first;
 }
 
 /* Ҳолати қарз дар ҷадвал (suporid / status) аз рӯи пардохтҳо нав мешавад, то соҳиби мағоза дар ҷадвал ҳам дуруст бинад */

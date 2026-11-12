@@ -102,6 +102,20 @@ printf '[Journal]\nSystemMaxUse=200M\n' > /etc/systemd/journald.conf.d/delus.con
 systemctl restart systemd-journald
 timedatectl set-timezone Asia/Dushanbe || true
 
+say "DNS-и захиравӣ: агар як сервери DNS ҷавоб надиҳад, дигараш кор мекунад"
+mkdir -p /etc/systemd/resolved.conf.d
+printf '[Resolve]
+DNS=1.1.1.1 8.8.8.8
+FallbackDNS=1.0.0.1 8.8.4.4 9.9.9.9
+' > /etc/systemd/resolved.conf.d/delus.conf
+systemctl restart systemd-resolved
+getent hosts sheets.googleapis.com >/dev/null && echo "DNS: OK"
+
+say "Назорат: диск, хотира, нусха ва сертификат ҳар 15 дақиқа (journalctl -t delus-monitor)"
+install -m 755 "$APP/deploy/monitor.sh" /usr/local/bin/delus-monitor
+echo '*/15 * * * * root /usr/local/bin/delus-monitor' > /etc/cron.d/delus-monitor
+/usr/local/bin/delus-monitor
+
 say "Санҷиши ҳар дақиқа: агар барнома ҷавоб надиҳад, бозоғозӣ мешавад"
 cat > /etc/cron.d/delus-health <<'EOF'
 * * * * * root curl -fsS -m 15 -o /dev/null http://127.0.0.1:8080/api/health || (sleep 20; curl -fsS -m 15 -o /dev/null http://127.0.0.1:8080/api/health || (logger -t delus "health failed, restart"; systemctl restart delus))

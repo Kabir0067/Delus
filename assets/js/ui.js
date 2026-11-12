@@ -149,7 +149,7 @@ function formModal({ title, sub, icon, tone, body, submit = 'Сабт карда
         err.hidden = true;
         save.disabled = true;
         const label = save.textContent;
-        save.textContent = 'Сабт шуда истодааст…';
+        save.textContent = 'Сабт мешавад…';
         try {
             const data = Object.fromEntries(new FormData(m.sheet).entries());
             const r = await onSubmit(data, m);

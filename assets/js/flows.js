@@ -165,7 +165,7 @@ function docModal(kind, preset = null) {
         }
         if (kind === 'buy') {
             return `<span>Мешавад: <b>${qty(round3(have + q))} ${u}</b></span>
-                <span>Фоидаи имконпазир: <b>${money(q * (num(l.price) - num(l.cost)))}</b></span>`;
+                <span>Фоида ҳангоми фурӯш: <b>${money(q * (num(l.price) - num(l.cost)))}</b></span>`;
         }
         const to = sel('to').value, there = qtyAt(l.p.id, to);
         return `<span>${esc(locName(src))}: ${qty(have)} → <b class="${have - q < 0 ? 'neg' : ''}">${qty(round3(have - q))} ${u}</b></span>
@@ -279,6 +279,14 @@ function docModal(kind, preset = null) {
     if (preset) addLine(preset); else drawLines();
 }
 
+/* Пас аз сабти асосӣ қадами иловагӣ хато карда метавонад (масалан, интернет қатъ шуд).
+   Он вақт тиреза баста мешавад ва корбар паёми аниқ мегирад: агар тиреза кушода монад,
+   корбар боз «Сабт кардан»-ро пахш мекунад ва фурӯш ё воридот ду бор сабт мешавад. */
+async function thenTry(fn, msg) {
+    try { await fn(); return true; }
+    catch (e) { console.error(e); toast(msg, 'err'); return false; }
+}
+
 async function saveDoc(kind, lines, data) {
     if (!lines.length) throw bad('Ақаллан як мол илова кунед.');
     for (const l of lines) {
@@ -326,14 +334,20 @@ async function saveDoc(kind, lines, data) {
     }
 
     const saved = await addTx(recs, { receipt: kind === 'sale' });
-    if (kind === 'buy') await updatePrices(lines);
+    if (kind === 'buy' && !await thenTry(() => updatePrices(lines),
+        'Воридот сабт шуд, вале нархи нав дар корти мол сабт нашуд. Нархро дар корти мол иваз кунед.')) return;
 
     if (onDebt) {
-        const d = await addDebt({
-            customer: String(data.debt_customer).trim(), phone: String(data.debt_phone || '').trim(),
-            amount: saleSum, date, due_date: data.debt_due || '', receipt_code: saved[0].receipt_code, note
-        });
-        if (prepay > 0) await addPayments([{ debt_id: d.id, amount: prepay, method: 'CASH', note: 'Пешпардохт', date }]);
+        const rc = saved[0].receipt_code;
+        let d = null;
+        if (!await thenTry(async () => {
+            d = await addDebt({
+                customer: String(data.debt_customer).trim(), phone: String(data.debt_phone || '').trim(),
+                amount: saleSum, date, due_date: data.debt_due || '', receipt_code: rc, note
+            });
+        }, `Фурӯш сабт шуд (чеки ${rc}), вале қарз сабт нашуд. Дар бахши «Қарз» қарзро дастӣ илова кунед.`)) return;
+        if (prepay > 0 && !await thenTry(() => addPayments([{ debt_id: d.id, amount: prepay, method: 'CASH', note: 'Пешпардохт', date }]),
+            `Қарз сабт шуд, вале пешпардохти ${money(prepay)} сабт нашуд. Онро дар корти мизоҷ ҳамчун пардохт илова кунед.`)) return;
         toast(`Фурӯш ба қарз сабт шуд. ${d.customer} қарздор: ${money(saleSum - prepay)}`);
         return;
     }
@@ -374,7 +388,7 @@ function fixModal(preset = null, locId = '') {
         body: `${field('Ҷой', `<select name="loc">${locOptions(locId || locs[0].id)}</select>`)}
             <div class="field"><span class="field-l">Мол</span><div data-pick></div></div>
             <div class="note" data-cur style="margin-top:14px" hidden></div>
-            ${field('Дар ҳақиқат чанд ҳаст?', '<input type="text" inputmode="decimal" name="real" autocomplete="off">', 'Агар рақам бо система фарқ кунад, барнома бақияро дуруст мекунад ва фарқро дар «Амалиётҳо» сабт мекунад.')}
+            ${field('Дар асл чанд ҳаст?', '<input type="text" inputmode="decimal" name="real" autocomplete="off">', 'Агар рақам бо система фарқ кунад, барнома бақияро дуруст мекунад ва фарқро дар «Амалиётҳо» сабт мекунад.')}
             ${field('Эзоҳ <em>(ихтиёрӣ)</em>', '<input type="text" name="note" maxlength="200" placeholder="Масалан: мол шикаста буд">')}`,
         async onSubmit(d) {
             if (!prod) throw bad('Молро интихоб кунед.');
@@ -541,12 +555,10 @@ function productForm(p = null, { name = '', noOpening = false, onSaved } = {}) {
             } else {
                 const saved = await addProduct({ ...rec, product_code: code, image_url: '', _photo: photo });
                 const open = num(d.opening);
-                if (open > 0 && d.opening_loc) {
-                    await addTx([{
-                        date: nowStr(), type: 'PURCHASE', product_id: saved.id, from_location_id: '', to_location_id: num(d.opening_loc),
-                        quantity: open, unit: saved.unit, unit_cost: saved.purchase_price, unit_price: saved.sale_price, note: 'Бақияи аввал'
-                    }]);
-                }
+                if (open > 0 && d.opening_loc && !await thenTry(() => addTx([{
+                    date: nowStr(), type: 'PURCHASE', product_id: saved.id, from_location_id: '', to_location_id: num(d.opening_loc),
+                    quantity: open, unit: saved.unit, unit_cost: saved.purchase_price, unit_price: saved.sale_price, note: 'Бақияи аввал'
+                }]), 'Мол илова шуд, вале бақияи аввал сабт нашуд. Онро бо «Воридот» илова кунед.')) return;
                 toast('Мол илова шуд');
                 if (onSaved) onSaved(saved);
             }
@@ -728,7 +740,8 @@ function returnForm(x, left) {
             const sum = Math.round(q * num(x.unit_price) * 100) / 100;
             if (onDebt) {
                 const off = Math.min(sum, I.debt.get(String(debt.id))._left);
-                if (off > 0) await addPayments([{ debt_id: debt.id, amount: off, method: 'RETURN', note: `Бозгашти мол аз ${x.transaction_code}` }]);
+                if (off > 0 && !await thenTry(() => addPayments([{ debt_id: debt.id, amount: off, method: 'RETURN', note: `Бозгашти мол аз ${x.transaction_code}` }]),
+                    `Бозгашт сабт шуд, вале қарзи ${debt.customer} кам нашуд. Дар корти мизоҷ пардохтро бо роҳи «Бозгашти мол» илова кунед.`)) return;
                 toast(`Бозгашт сабт шуд. Қарзи ${debt.customer} ${money(off)} кам шуд.`);
                 return;
             }
@@ -855,25 +868,9 @@ function cfgPass() {
             ${field('Логин', `<input type="text" name="login" value="${esc(S.user)}" autocomplete="username" autocapitalize="none" spellcheck="false">`)}
             ${field('Пароли нав', '<input type="password" name="pass" autocomplete="new-password">', 'Агар паролро иваз кардан нахоҳед, холӣ гузоред.')}`,
         async onSubmit(d) {
-            if (SERVER) {
-                const r = await serverCall('/password', { current: d.cur, login: d.login, pass: d.pass });
-                S.user = r.user;
-                localStorage.setItem('delus.auth', JSON.stringify({ user: S.user, server: true }));
-                $('#userName').textContent = S.user;
-                toast('Логин ва парол сабт шуд');
-                renderPage();
-                return;
-            }
-            const rows = await DB.get('login!A:B');
-            const i = rows.findIndex((r, n) => n > 0 && String(r[0]).trim().toLowerCase() === S.user);
-            if (i < 0) throw bad('Логини шумо дар ҷадвал ёфт нашуд.');
-            if (String(rows[i][1]).trim() !== String(d.cur).trim()) throw bad('Пароли ҳозира нодуруст аст.');
-            const login = String(d.login || '').trim();
-            const pass = String(d.pass || '').trim() || String(rows[i][1]).trim();
-            if (!login) throw bad('Логинро нависед.');
-            if (rows.some((r, n) => n > 0 && n !== i && String(r[0]).trim().toLowerCase() === login.toLowerCase())) throw bad('Ин логин банд аст.');
-            await DB.setRanges([{ range: `login!A${i + 1}:B${i + 1}`, values: [[login, pass]] }]);
-            await startSession(login, pass);
+            if (!String(d.cur || '').trim()) throw bad('Пароли ҳозираро нависед.');
+            const r = await serverCall('/password', { current: d.cur, login: d.login, pass: d.pass });
+            startSession({ user: r.user, sheet: S.sheet });
             toast('Логин ва парол сабт шуд');
             renderPage();
         }
@@ -1001,10 +998,11 @@ document.addEventListener('input', e => {
 /* ==================================================================
    ВОРИДШАВӢ ВА ОҒОЗ
    ================================================================== */
-async function startSession(login, pass) {
-    S.user = String(login).trim().toLowerCase();
-    S.fp = SERVER ? '' : await fingerprint(login, pass);
-    localStorage.setItem('delus.auth', JSON.stringify(SERVER ? { user: S.user, server: true } : { user: S.user, fp: S.fp }));
+/* me: ҷавоби сервер { user, sheet }. Дар localStorage танҳо ном ва рақами ҷадвал мемонад, парол не. */
+function startSession(me) {
+    S.user = String(me.user).trim().toLowerCase();
+    S.sheet = me.sheet || '';
+    try { localStorage.setItem('delus.auth', JSON.stringify({ user: S.user, sheet: S.sheet })); } catch (e) { }
     $('#userName').textContent = S.user;
     S.seq++;
 }
@@ -1019,13 +1017,13 @@ function showLogin(msg = '') {
 }
 
 function logout(msg = '') {
-    if (SERVER && S.user) serverCall('/logout', {}).catch(() => { });
+    if (S.user) serverCall('/logout', {}).catch(() => { });
     Modal.closeAll();
     localStorage.removeItem('delus.auth');
     Local.clear('kv');
     Local.clear('img');
     IMG.clear();
-    Object.assign(S, { user: null, fp: '', sig: '', products: [], locations: [], tx: [], txSorted: [], exp: [], debts: [], pays: [], f: {}, page: 'home' });
+    Object.assign(S, { user: null, sheet: '', sig: '', products: [], locations: [], tx: [], txSorted: [], exp: [], debts: [], pays: [], f: {}, page: 'home' });
     reindexDebts();
     Object.assign(S.rep, { tab: 'all', k: 'month', from: '', to: '', loc: '', cat: '', q: '', ecat: '' });
     S.homeK = 'today';
@@ -1041,17 +1039,9 @@ $('#loginForm').addEventListener('submit', async e => {
     err.hidden = true;
     if (!user || !pass) { err.textContent = 'Логин ва паролро нависед.'; err.hidden = false; return; }
     btn.disabled = true;
-    btn.textContent = 'Санҷиш…';
+    btn.textContent = 'Ворид мешавад…';
     try {
-        if (SERVER) {
-            const r = await serverCall('/login', { user, pass });
-            await startSession(r.user, '');
-        } else {
-            const rows = await DB.get('login!A:B');
-            const row = rows.slice(1).find(r => String(r[0] ?? '').trim().toLowerCase() === user.toLowerCase() && String(r[1] ?? '').trim() === pass);
-            if (!row) throw known('Логин ё парол нодуруст аст.');
-            await startSession(row[0], row[1]);
-        }
+        startSession(await serverCall('/login', { user, pass }));
         await enterApp();
     } catch (ex) {
         err.textContent = errText(ex);
@@ -1072,7 +1062,10 @@ function showApp() {
 }
 
 async function enterApp() {
+    const user = S.user;
     const snap = await Local.get('kv', 'snapshot');
+    /* Ҳангоми хондани маълумоти маҳаллӣ сервер гуфта метавонад, ки сессия тамом шуд — он вақт барнома кушода намешавад */
+    if (!S.user || S.user !== user) return;
     if (snap) {
         applyData(snap);
         S.sig = JSON.stringify(snap);
@@ -1091,29 +1084,40 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('online', () => { if (S.user) syncQuiet(); });
 
+const startFailed = e => { console.error(e); S.user = null; showLogin(errText(e)); };
+
 (async function init() {
     let saved = null;
     try { saved = JSON.parse(localStorage.getItem('delus.auth')); } catch (e) { }
-    if (SERVER) {
-        /* Сессия дар сервер санҷида мешавад; маълумоти маҳаллӣ танҳо барои тез кушодан аст */
-        try {
-            const me = await serverCall('/me');
-            if (!me.user) { localStorage.removeItem('delus.auth'); Local.clear('kv'); return showLogin(); }
-            saved = { user: me.user };
-        } catch (e) {
-            /* сервер нест: маълумоти кӯҳна нишон дода намешавад, то касе фикр накунад, ки сабт кор мекунад */
-            if (e.noServer) return showLogin(MSG.noServer);
-            /* интернет нест: агар пештар ворид шуда буд, маълумоти охиринро нишон медиҳем */
-            if (!saved || !saved.user) return showLogin(errText(e));
-        }
-    } else if (!saved || !saved.user || !saved.fp) return showLogin();
-    S.user = saved.user;
-    S.fp = saved.fp || '';
-    $('#userName').textContent = S.user;
-    try { await enterApp(); }
-    catch (e) {
-        console.error(e);
-        S.user = null;
-        showLogin(errText(e));
+    const me = serverCall('/me');
+    me.catch(() => { });
+
+    /* Дар ин дастгоҳ касе ворид нашудааст: экрани воридшавӣ фавран, бе интизори сервер.
+       Агар сессия дар сервер ҳаст (масалан, хотираи браузер тоза шуда буд), барнома худаш кушода мешавад. */
+    if (!saved || !saved.user) {
+        showLogin();
+        me.then(r => { if (r.user && !S.user) { startSession(r); enterApp().catch(startFailed); } }, () => { });
+        return;
     }
+
+    /* Корбари шинос ва маълумоти маҳаллӣ ҳаст: барнома фавран кушода мешавад, сессия дар замина санҷида мешавад */
+    if (await Local.get('kv', 'snapshot')) {
+        startSession(saved);
+        me.then(r => {
+            if (!r.user) logout('Вақти воридшавӣ гузашт. Аз нав ворид шавед.');
+            else if (r.sheet && r.sheet !== S.sheet) { startSession(r); if (S.page === 'set') renderPage(); }
+        }, e => { if (e.noServer) setOffline('server'); });
+        enterApp().catch(startFailed);
+        return;
+    }
+
+    /* Маълумоти маҳаллӣ нест: аввал сессияро месанҷем */
+    try {
+        const r = await me;
+        if (!r.user) { localStorage.removeItem('delus.auth'); return showLogin(); }
+        startSession(r);
+    } catch (e) {
+        return showLogin(e.noServer ? MSG.noServer : errText(e));
+    }
+    enterApp().catch(startFailed);
 })();

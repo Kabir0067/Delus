@@ -12,8 +12,10 @@ while read old new ref; do
         echo "ХАТО: server.js вайрон аст — версияи пешина бармегардад"
         git --work-tree="$TARGET" checkout -f "$old"
         git update-ref refs/heads/main "$old"
+        sudo -n /usr/bin/systemctl restart delus
         exit 1
     fi
+    git rev-parse --short "$new" > "$TARGET/VERSION"
     sudo -n /usr/bin/systemctl restart delus
     for i in 1 2 3 4 5 6 7 8 9 10; do
         sleep 1
