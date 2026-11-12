@@ -13,6 +13,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const zlib = require('node:zlib');
+// Сервер IPv6 надорад: аввал IPv4, то пайваст ба Google вақтро бар кӯшиши беҳуда сарф накунад
+require('node:dns').setDefaultResultOrder('ipv4first');
 
 /* ---------- танзимот: аз муҳит ё аз server/.env ---------- */
 const ENV = (() => {
