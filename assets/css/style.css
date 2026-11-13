@@ -1235,3 +1235,6 @@ details.extra[open] summary { padding-bottom: 10px; }
 .rcpt-wait .lb-spin { display: block; border-color: rgb(47 86 224 / .25); border-top-color: var(--brand); }
 .rcpt-hint { margin: 12px 2px 0; font-size: 13px; color: var(--ink-3); text-align: center; }
 .sheet-f [data-share], .sheet-f [data-dl] { flex: 1 1 0; }
+.rcpt-seg { display: flex; width: 100%; margin-bottom: 12px; }
+.rcpt-seg button { flex: 1 1 0; }
+@media (max-width: 480px) { .wide-only { display: none; } }

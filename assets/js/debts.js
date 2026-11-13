@@ -62,7 +62,7 @@ PAGES.debt = {
                     ${c.late ? `<span class="pill bad">${ic('warn', 13)}Мӯҳлат гузашт</span>` : c.left <= MONEY_EPS ? `<span class="pill good">${ic('check', 13)}Пардохт шуд</span>` : `<span class="pill">Супорид ${pctPaid(c)}%</span>`}
                     <span class="debtor-btns">
                         ${c.phone ? `<a class="btn sm" href="${esc(telHref(c.phone))}" aria-label="Занг задан">${ic('phone', 14)}<span>Занг</span></a>` : ''}
-                        <button class="btn sm t-buy" data-act="debtReceipt" data-id="${esc(c.key)}" aria-label="Чеки қарз" title="Чеки қарз: фиристодан ё боргирӣ">${ic('receipt', 14)}<span>Чек</span></button>
+                        <button class="btn sm t-buy" data-act="debtReceipt" data-id="${esc(c.key)}" aria-label="Чеки насия" title="Чеки насия: фиристодан ба муштарӣ ё боргирӣ">${ic('receipt', 14)}<span>Чек</span></button>
                         ${c.left > MONEY_EPS ? `<button class="btn sm t-sale" data-act="debtPay" data-id="${esc(c.key)}">${ic('wallet', 14)}Пардохт</button>` : ''}
                     </span>
                 </div>
@@ -82,27 +82,28 @@ function debtorView(key) {
     const m = Modal.open({
         title: c.name, sub: c.phone || 'бе телефон', icon: 'user', tone: c.late ? 'tone-bad' : 'tone-warn',
         body: `<div class="facts">
-                <div><small>Ҳамагӣ қарз</small><b>${fmt(c.amount, 2)}</b></div>
-                <div><small>Супорид</small><b class="pos">${fmt(c.paid, 2)}</b></div>
-                <div><small>Боқимонда</small><b class="${c.left > MONEY_EPS ? 'neg' : 'pos'}">${fmt(c.left, 2)}</b></div>
-                <div><small>Пардохт шуд</small><b>${pctPaid(c)}%</b></div>
+                <div><small>Ҳаҷми харид</small><b>${fmt(c.amount, 2)}</b></div>
+                <div><small>Пардохтшуда</small><b class="pos">${fmt(c.paid, 2)}</b></div>
+                <div><small>Маблағи боқимонда</small><b class="${c.left > MONEY_EPS ? 'neg' : 'pos'}">${fmt(c.left, 2)}</b></div>
+                <div><small>Ҳиссаи пардохт</small><b>${pctPaid(c)}%</b></div>
             </div>
             <div class="debtor-bar big"><i style="width:${pctPaid(c)}%"></i></div>
             <div class="quick">
                 ${c.left > MONEY_EPS ? `<button class="btn t-sale" data-pay>${ic('wallet', 16)}Пардохт</button>
                 <button class="btn t-buy" data-full>${ic('check', 16)}Пурра бастан</button>` : ''}
-                <button class="btn t-move" data-receipt>${ic('receipt', 16)}Чеки қарз</button>
+                <button class="btn t-move" data-receipt>${ic('receipt', 16)}Чеки насия</button>
                 <button class="btn" data-new>${ic('plus', 16)}Қарзи нав</button>
                 ${c.phone ? `<a class="btn" href="${esc(telHref(c.phone))}">${ic('phone', 16)}Занг</a>` : ''}
             </div>
 
-            <p class="sec-t">Қарзҳо</p>
+            <p class="sec-t">Рӯйхати харидҳо</p>
             ${[...c.debts].reverse().map(d => {
                 const items = debtItems(d);
                 return `<div class="debt-row ${d._closed ? 'closed' : ''}">
                     <div class="debt-row-h">
-                        <span><b>${money(d.amount)}</b><small>${esc(dayLabel(dayOf(d)))}${d.receipt_code ? ` · чек ${esc(d.receipt_code)}` : ' · қарзи дастӣ'}${d.due_date ? ` · то ${esc(dotDate(String(d.due_date).slice(0, 10)))}` : ''}</small></span>
+                        <span><b>${money(d.amount)}</b><small>${esc(dayLabel(dayOf(d)))}${d.receipt_code ? ` · чеки № ${esc(d.receipt_code)}` : ' · хариди пешина'}${d.due_date ? ` · то ${esc(dotDate(String(d.due_date).slice(0, 10)))}` : ''}</small></span>
                         <span class="debt-row-v">${d._closed ? `<span class="pill good">Пӯшида</span>` : `${d._late ? '<span class="pill bad">Мӯҳлат гузашт</span>' : ''}<b>${money(d._left)}</b><small>боқимонда</small>`}</span>
+                        <button type="button" class="icon-btn" data-rc="${esc(d.id)}" aria-label="Чеки ҳамин харид" title="Чеки ҳамин харид">${ic('receipt', 16)}</button>
                         <button type="button" class="icon-btn" data-edit="${esc(d.id)}" aria-label="Тағйири қарз" title="Тағйири қарз">${ic('edit', 16)}</button>
                     </div>
                     ${items.length ? `<div class="debt-items">${items.map(t => { const p = prodBy(t.product_id) || {}; return `<span>${esc(p.name || 'Мол')} — ${qty(t.quantity)} × ${fmt(t.unit_price, 2)}</span>`; }).join('')}</div>` : ''}
@@ -125,6 +126,7 @@ function debtorView(key) {
     $$('[data-full]', m.el).forEach(b => b.onclick = () => { m.close(); payForm(c, { full: true, onDone: again }); });
     $$('[data-new]', m.el).forEach(b => b.onclick = () => { m.close(); debtForm(null, c, again); });
     $$('[data-receipt]', m.el).forEach(b => b.onclick = () => debtReceipt(key));
+    $$('[data-rc]', m.el).forEach(b => b.onclick = () => debtReceipt(key, { debt: b.dataset.rc }));
     $$('[data-edit]', m.el).forEach(b => b.onclick = () => { m.close(); debtForm(I.debt.get(b.dataset.edit), null, again); });
     $$('[data-delpay]', m.el).forEach(b => b.onclick = async () => {
         const p = S.pays.find(x => String(x.id) === b.dataset.delpay);
@@ -143,10 +145,20 @@ const dateLong = d => { const [y, m, n] = String(d || '').slice(0, 10).split('-'
 const daysTo = d => Math.round(strToSerial(String(d).slice(0, 10)) - strToSerial(today()));
 const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
-/* Кадом қарзҳо дар чек: ҳамаи қарзҳои кушода; агар ҳама пӯшида бошанд — се қарзи охирин */
-function receiptData(c) {
+/* Кадом харидҳо дар чек:
+   - { debt: id } — танҳо ҳамон як харид бо пардохтҳояш (чеки алоҳида, масалан барои хариди пурра супоридашуда);
+   - 'open'      — ҳамаи харидҳои ҳанӯз пардохтнашуда; агар ҳама супорида шуда бошанд — се хариди охирин;
+   - 'all'       — ҳисоби умумӣ: ҳамаи харидҳои мизоҷ аз аввал то имрӯз. */
+const receiptMode = (c, mode) => {
+    const one = mode && typeof mode === 'object' ? c.debts.find(d => String(d.id) === String(mode.debt)) : null;
+    if (one) return { kind: 'one', list: [one] };
+    if (mode === 'all') return { kind: 'all', list: c.debts };
     const open = c.debts.filter(d => !d._closed);
-    const debts = (open.length ? open : c.debts.slice(-3)).slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    return { kind: 'open', list: open.length ? open : c.debts.slice(-3) };
+};
+function receiptData(c, mode = 'open') {
+    const sel = receiptMode(c, mode);
+    const debts = sel.list.slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
     const ids = new Set(debts.map(d => String(d.id)));
     const pays = S.pays.filter(p => ids.has(String(p.debt_id))).sort((a, b) => String(a.date).localeCompare(String(b.date)) || num(a.id) - num(b.id));
     const amount_ = debts.reduce((s, d) => s + num(d.amount), 0);
@@ -155,7 +167,8 @@ function receiptData(c) {
     const dues = debts.filter(d => !d._closed && d.due_date).map(d => String(d.due_date).slice(0, 10)).sort();
     const closed = left <= MONEY_EPS;
     const late = !closed && debts.some(d => d._late);
-    return { c, debts, pays, amount: amount_, paid, left, due: dues[0] || '', closed, late, no: 'Қ-' + pad5(Math.max(...debts.map(d => num(d.id)))) };
+    const maxId = pad5(Math.max(...debts.map(d => num(d.id))));
+    return { c, debts, pays, amount: amount_, paid, left, due: dues[0] || '', closed, late, kind: sel.kind, no: (sel.kind === 'all' ? 'ҲУ-' : 'Қ-') + maxId };
 }
 
 async function receiptFonts() {
@@ -184,7 +197,7 @@ function receiptPaint(g, R, H) {
     const pill = (t, xr, y, fg, bg) => { const w = width(t, 23, 700) + 66; box(xr - w, y - 34, w, 48, 24, bg); if (draw) { g.beginPath(); g.arc(xr - w + 26, y - 10, 6, 0, Math.PI * 2); g.fillStyle = fg; g.fill(); } T(t, xr - 22, y - 2, 23, 700, fg, 'right'); };
     const nf = n => fmt(n, 2), cur_ = cur();
     const sum = n => nf(n) + '\u00a0' + cur_;
-    const st = R.closed ? { t: 'Пардохт шуд', fg: C.green, bg: C.greenBg } : R.late ? { t: 'Мӯҳлат гузашт', fg: C.red, bg: C.redBg } : { t: 'Кушода', fg: C.amber, bg: C.amberBg };
+    const st = R.closed ? { t: 'Пурра пардохт шуд', fg: C.green, bg: C.greenBg } : R.late ? { t: 'Мӯҳлат гузаштааст', fg: C.red, bg: C.redBg } : { t: 'Боқимонда дорад', fg: C.amber, bg: C.amberBg };
 
     /* ---- замина ва коғаз ---- */
     if (draw) {
@@ -217,14 +230,15 @@ function receiptPaint(g, R, H) {
         g.save(); g.translate(bx + 14, by + 14); g.scale(56 / 24, 56 / 24); g.fillStyle = '#3a2300'; g.fill(new Path2D('M13.2 2 4 14h6.2L9.4 22 19 10h-6.4z')); g.restore();
     }
     T(fit(S.cfg.company_name || 'DELUS', 440, 44, 700), X + 108, M + 108, 44, 700, '#fff');
-    T('Анбор ва савдо', X + 108, M + 148, 25, 500, 'rgba(255,255,255,.62)');
-    caps('ҲУҶҶАТИ ҚАРЗ', XR, M + 84, C.gold, 'right', 22);
+    const stamp = dateLong(today()) + ', ' + nowStr().slice(11, 16);
+    T(fit('Мағозаи асбобҳои барқӣ ва таҷҳизот', XR - width(stamp, 24, 500) - 28 - (X + 108), 25, 500), X + 108, M + 148, 25, 500, 'rgba(255,255,255,.75)');
+    caps(R.kind === 'all' ? 'ҲИСОБИ УМУМИИ НАСИЯ' : R.debts.length > 1 ? 'ҲИСОБИ НАСИЯ' : 'ЧЕКИ ХАРИДИ НАСИЯ', XR, M + 84, C.gold, 'right', 22);
     T('№ ' + R.no, XR, M + 128, 32, 700, '#fff', 'right');
     T(dateLong(today()) + ', ' + nowStr().slice(11, 16), XR, M + 166, 24, 500, 'rgba(255,255,255,.62)', 'right');
     let y = M + HH + 70;
 
     /* ---- мизоҷ ---- */
-    caps('МИЗОҶ', X, y);
+    caps('ХАРИДОР (МУШТАРӢ)', X, y);
     pill(st.t, XR, y + 6, st.fg, st.bg);
     y += 70;
     for (const l of wrap(R.c.name, CW, 50, 700).slice(0, 2)) { T(l, X, y, 50, 700); y += 60; }
@@ -234,14 +248,14 @@ function receiptPaint(g, R, H) {
     /* ---- маблағи асосӣ ---- */
     const panelH = 248, py = y;
     box(X - 28, py, CW + 56, panelH, 30, R.closed ? C.greenBg : R.late ? C.redBg : C.brandBg);
-    caps(R.closed ? 'ҚАРЗ ПУРРА ПАРДОХТ ШУД' : 'БОҚИМОНДА БАРОИ ПАРДОХТ', X, py + 56, R.closed ? C.green : R.late ? C.red : C.brand);
+    caps(R.closed ? 'ҲИСОБ ПУРРА СУПОРИДА ШУДААСТ' : 'МАБЛАҒИ БОҚИМОНДА БАРОИ ПАРДОХТ', X, py + 56, R.closed ? C.green : R.late ? C.red : C.brand);
     const big = nf(R.closed ? R.amount : R.left);
     T(big, X, py + 150, 92, 700, R.closed ? C.green : R.late ? C.red : C.ink);
     T(cur_, X + width(big, 92, 700) + 18, py + 150, 34, 600, C.ink2);
     const pct = R.amount > 0 ? Math.min(1, R.paid / R.amount) : 0;
     box(X, py + 180, CW, 14, 7, 'rgba(15,26,51,.08)');
     if (pct > 0) box(X, py + 180, Math.max(14, CW * pct), 14, 7, C.green);
-    T(`Супорид ${nf(R.paid)} аз ${nf(R.amount)} ${cur_}`, X, py + 228, 24, 500, C.ink2);
+    T(`Пардохтшуда: ${nf(R.paid)} аз ${nf(R.amount)} ${cur_}`, X, py + 228, 24, 500, C.ink2);
     T(Math.round(pct * 100) + '%', XR, py + 228, 24, 700, C.green, 'right');
     if (R.closed && draw) {   // мӯҳри «Пардохт шуд»
         g.save(); g.translate(XR - 100, py + 88); g.rotate(-0.22);
@@ -252,30 +266,38 @@ function receiptPaint(g, R, H) {
     }
     y = py + panelH + 56;
 
-    /* ---- ҷумлаи асосӣ: кӣ, кай, чанд, то кай ---- */
+    /* ---- ҷумлаи асосӣ: муроҷиати боэҳтиром ба харидор ---- */
     const first = R.debts[0], lastD = R.debts[R.debts.length - 1];
-    let story = R.debts.length === 1
-        ? `${R.c.name} ${dateLong(first.date)} маблағи ${sum(first.amount)} қарз гирифтааст.`
-        : `${R.c.name} ${R.debts.length} маротиба қарз гирифтааст: аз ${dateLong(first.date)} то ${dateLong(lastD.date)}, ба маблағи умумии ${sum(R.amount)}.`;
-    if (R.due) story += ` Мӯҳлати пардохт: ${dateLong(R.due)}.`;
-    if (R.paid > MONEY_EPS && !R.closed) story += ` Аз он ${sum(R.paid)} супорида шуд, боқимонда ${sum(R.left)}.`;
-    if (R.closed) story += ' Қарз пурра баргардонида шуд.';
+    let story = '';
+    if (R.closed && R.debts.length === 1) {
+        story = `Харидори муҳтарам ${R.c.name}! Хариди насияи шумо аз санаи ${dateLong(first.date)} ба маблағи ${sum(R.amount)} пурра пардохт шудааст. Аз ҳамкорӣ ва боварии шумо самимона сипосгузорем!`;
+    } else if (R.closed) {
+        story = `Харидори муҳтарам ${R.c.name}! Ҳамаи ҳисобҳои хариди насияи шумо ба маблағи умумии ${sum(R.amount)} пурра пардохт шудаанд. Аз ҳамкорӣ ва боварии шумо самимона сипосгузорем!`;
+    } else if (R.debts.length === 1) {
+        story = `Харидори гиромӣ ${R.c.name}, хариди насияи шумо аз санаи ${dateLong(first.date)} маблағи ${sum(first.amount)}-ро ташкил медиҳад.`;
+        if (R.paid > MONEY_EPS) story += ` Аз ин маблағ ${sum(R.paid)} супорида шуда, маблағи боқимонда ${sum(R.left)} мебошад.`;
+        if (R.due) story += ` Муҳлати баргардонидани маблағ: то ${dateLong(R.due)}.`;
+    } else {
+        story = `Харидори гиромӣ ${R.c.name}, ҳисоби умумии ${R.debts.length} хариди насияи шумо аз ${dateLong(first.date)} то ${dateLong(lastD.date)} ба маблағи ${sum(R.amount)} мебошад.`;
+        if (R.paid > MONEY_EPS) story += ` То имрӯз ${sum(R.paid)} пардохт шуда, боқимонда ${sum(R.left)} мебошад.`;
+        if (R.due) story += ` Муҳлати баргардонидани маблағ: то ${dateLong(R.due)}.`;
+    }
     const sl = wrap(story, CW - 34, 30, 500);
     if (draw) box(X, y - 34, 6, sl.length * 46 + 8, 3, C.gold);
     for (const l of sl) { T(l, X + 30, y, 30, 500, C.ink2); y += 46; }
     y += 34;
 
-    /* ---- қарзҳо ---- */
+    /* ---- тафсилоти харидҳо ---- */
     dash(y); y += 62;
-    caps(R.debts.length > 1 ? `ҚАРЗҲО (${R.debts.length})` : 'ТАФСИЛОТИ ҚАРЗ', X, y); y += 56;
+    caps(R.debts.length > 1 ? `РӮЙХАТИ ХАРИДҲО (${R.debts.length})` : 'ТАФСИЛОТИ ХАРИДИ МОЛҲО', X, y); y += 56;
     for (const d of R.debts) {
-        T('Қарз аз ' + dateLong(d.date), X, y, 31, 700);
+        T('Харид аз санаи ' + dateLong(d.date), X, y, 31, 700);
         T(nf(d.amount), XR, y, 31, 700, C.ink, 'right');
         y += 42;
         const dd = d.due_date ? daysTo(d.due_date) : null;
-        const meta = [d.receipt_code ? 'Чеки ' + d.receipt_code : 'Қарзи дастӣ', d.due_date ? 'мӯҳлат: ' + dateLong(d.due_date) : ''].filter(Boolean).join(' · ');
+        const meta = [d.receipt_code ? 'Чеки № ' + d.receipt_code : 'Хариди пешина', d.due_date ? 'Муҳлат: ' + dateLong(d.due_date) : ''].filter(Boolean).join(' · ');
         T(fit(meta, CW - 230, 24, 500), X, y, 24, 500, C.ink3);
-        const tag = d._closed ? ['Пардохт шуд', C.green] : dd === null ? ['', C.ink3] : dd < 0 ? [`${-dd} рӯз гузашт`, C.red] : dd === 0 ? ['Имрӯз', C.amber] : [`боз ${dd} рӯз`, dd <= 3 ? C.amber : C.green];
+        const tag = d._closed ? ['Пардохт шуд', C.green] : dd === null ? ['', C.ink3] : dd < 0 ? [`${-dd} рӯз гузашт`, C.red] : dd === 0 ? ['Имрӯз', C.amber] : [`${dd} рӯз монд`, dd <= 3 ? C.amber : C.green];
         if (tag[0]) T(tag[0], XR, y, 24, 700, tag[1], 'right');
         y += 40;
         const items = debtItems(d);
@@ -287,9 +309,9 @@ function receiptPaint(g, R, H) {
             T(right, XR, y, 25, 500, C.ink2, 'right');
             y += 38;
         }
-        if (items.length > 10) { T(`… ва боз ${items.length - 10} мол`, X + 4, y, 24, 500, C.ink3); y += 38; }
+        if (items.length > 10) { T(`… ва боз ${items.length - 10} номгӯи мол`, X + 4, y, 24, 500, C.ink3); y += 38; }
         if (d.note) for (const l of wrap('Эзоҳ: ' + d.note, CW, 24, 400).slice(0, 2)) { T(l, X, y, 24, 400, C.ink3); y += 36; }
-        if (d._paid > MONEY_EPS && !d._closed) { T(`Супорид ${nf(d._paid)} · боқимонда ${nf(d._left)} ${cur_}`, X, y, 24, 600, C.brand); y += 38; }
+        if (d._paid > MONEY_EPS && !d._closed) { T(`Пардохтшуда: ${nf(d._paid)} · Боқимонда: ${nf(d._left)} ${cur_}`, X, y, 24, 600, C.brand); y += 38; }
         y += 26;
         if (d !== lastD) { if (draw) { g.fillStyle = C.line; g.fillRect(X, y - 20, CW, 2); } y += 24; }
     }
@@ -297,7 +319,7 @@ function receiptPaint(g, R, H) {
     /* ---- пардохтҳо ---- */
     if (R.pays.length) {
         dash(y); y += 62;
-        caps(`ПАРДОХТҲО (${R.pays.length})`, X, y); y += 54;
+        caps(`ТАЪРИХИ ПАРДОХТҲО (${R.pays.length})`, X, y); y += 54;
         const shown = R.pays.slice(-12);
         if (R.pays.length > 12) { T(`… пеш аз ин боз ${R.pays.length - 12} пардохт`, X, y, 24, 500, C.ink3); y += 38; }
         for (const p of shown) {
@@ -313,18 +335,18 @@ function receiptPaint(g, R, H) {
     /* ---- ҷамъ ---- */
     dash(y); y += 64;
     const row = (k, v, s, w, col) => { T(k, X, y, s, w === 700 ? 700 : 500, w === 700 ? C.ink : C.ink2); T(v, XR, y, s, w, col || C.ink, 'right'); y += s + 22; };
-    row('Ҳамагӣ қарз', `${nf(R.amount)} ${cur_}`, 28, 600);
-    row('Супорида шуд', `${nf(R.paid)} ${cur_}`, 28, 600, C.green);
+    row('Маблағи умумии харид', `${nf(R.amount)} ${cur_}`, 28, 600);
+    row('Маблағи пардохтшуда', `${nf(R.paid)} ${cur_}`, 28, 600, C.green);
     if (draw) { g.fillStyle = C.ink; g.fillRect(X, y - 22, CW, 3); }
     y += 26;
-    row('Боқимонда', `${nf(R.left)} ${cur_}`, 40, 700, R.closed ? C.green : R.late ? C.red : C.ink);
+    row('Маблағи боқимонда', `${nf(R.left)} ${cur_}`, 40, 700, R.closed ? C.green : R.late ? C.red : C.ink);
     y += 16;
 
     /* ---- огоҳӣ дар бораи мӯҳлат ---- */
     const dDue = R.due ? daysTo(R.due) : null;
-    const notice = R.closed ? ['Қарз пурра пардохт шудааст. Ташаккур!', C.green, C.greenBg]
-        : R.late ? [`Мӯҳлати пардохт гузаштааст. Лутфан, қарзро ҳарчи зудтар пардохт кунед.`, C.red, C.redBg]
-            : R.due ? [`Лутфан, қарзро то ${dateLong(R.due)} пардохт кунед${dDue > 0 ? ` (боз\u00a0${dDue}\u00a0рӯз)` : dDue === 0 ? ' (имрӯз)' : ''}.`, C.amber, C.amberBg] : null;
+    const notice = R.closed ? ['Ҳисоби ин харидҳо пурра пардохт шуд. Ташаккур барои боварӣ ва ҳамкории нек!', C.green, C.greenBg]
+        : R.late ? [`Муҳлати муайяншудаи пардохт ба анҷом расид. Эҳтиромона хоҳиш мекунем, ки маблағи боқимондаро ба наздикӣ супоред.`, C.red, C.redBg]
+            : R.due ? [`Эҳтиромона хоҳиш мекунем, ки маблағи боқимонда то санаи ${dateLong(R.due)} пардохт шавад${dDue > 0 ? ` (боз\u00a0${dDue}\u00a0рӯз\u00a0мондааст)` : dDue === 0 ? ' (имрӯз)' : ''}.`, C.amber, C.amberBg] : null;
     if (notice) {
         const nl = wrap(notice[0], CW - 60, 27, 600), nh = nl.length * 40 + 44;
         box(X - 28, y, CW + 56, nh, 24, notice[2]);
@@ -335,16 +357,16 @@ function receiptPaint(g, R, H) {
 
     /* ---- поён ---- */
     dash(y); y += 70;
-    T('Ташаккур барои эътимоди шумо!', W / 2, y, 30, 700, C.ink, 'center'); y += 46;
-    T(`${S.cfg.company_name || 'DELUS'} · ${dateLong(today())}, ${nowStr().slice(11, 16)}`, W / 2, y, 23, 500, C.ink3, 'center'); y += 36;
-    T('Ин ҳуҷҷат бо барномаи DELUS сохта шудааст', W / 2, y, 21, 400, '#a3abbd', 'center');
+    T('Ташаккур барои интихоб!', W / 2, y, 30, 700, C.ink, 'center'); y += 46;
+    T(`${S.cfg.company_name || 'DELUS'} · ${dateLong(today())}, соати ${nowStr().slice(11, 16)}`, W / 2, y, 23, 500, C.ink3, 'center'); y += 36;
+    T('Ҳисоботи расмии электронии дӯкон', W / 2, y, 21, 500, '#8d98af', 'center');
     y += 60;
     return y + M + 18;
 }
 
-async function receiptBlob(c) {
+async function receiptBlob(c, mode = 'open') {
     await receiptFonts();
-    const R = receiptData(c);
+    const R = receiptData(c, mode);
     const probe = document.createElement('canvas').getContext('2d');
     const H = Math.min(9000, Math.ceil(receiptPaint(probe, R, null)));
     const cv = document.createElement('canvas');
@@ -354,28 +376,36 @@ async function receiptBlob(c) {
     return { blob, R };
 }
 
-function debtReceipt(key) {
+function debtReceipt(key, mode = 'open') {
     const c = custBy(key);
     if (!c) return toast('Мизоҷ ёфт нашуд.', 'err');
+    const single = mode && typeof mode === 'object';
+    const d1 = single ? c.debts.find(d => String(d.id) === String(mode.debt)) : null;
+    if (single && !d1) return toast('Ин харид ёфт нашуд.', 'err');
+    const hasOpen = c.debts.some(d => !d._closed);
+    const seg = !single && c.debts.length > 1 ? `<div class="seg rcpt-seg" role="radiogroup" aria-label="Навъи чек">
+            <button type="button" class="${mode === 'all' ? '' : 'on'}" data-mode="open" role="radio" aria-checked="${mode !== 'all'}">${hasOpen ? 'Боқимонда' : 'Харидҳои охирин'}</button>
+            <button type="button" class="${mode === 'all' ? 'on' : ''}" data-mode="all" role="radio" aria-checked="${mode === 'all'}">Ҳамаи харидҳо (${c.debts.length})</button>
+        </div>` : '';
     const m = Modal.open({
-        title: 'Чеки қарз', sub: c.name, icon: 'receipt', tone: 'tone-buy',
-        body: `<div class="rcpt-prev" data-prev><div class="rcpt-wait"><span class="lb-spin"></span>Чек омода мешавад…</div></div>
-            <p class="rcpt-hint">${isIOS() ? 'Барои гузоштан ба Галерея: «Фиристодан» → «Сохранить изображение» (Save Image).' : 'Чекро ҳамчун акс ба мизоҷ фиристед ё дар телефон нигоҳ доред.'}</p>`,
+        title: single ? 'Чеки харид' : 'Чеки насия (қарз)',
+        sub: single ? `${c.name} · ${dateLong(d1.date)}` : c.name, icon: 'receipt', tone: 'tone-buy',
+        body: `${seg}<div class="rcpt-prev" data-prev><div class="rcpt-wait"><span class="lb-spin"></span>Чек омода мешавад…</div></div>
+            <p class="rcpt-hint">${isIOS() ? 'Барои захира дар Галерея: «Фиристодан» → «Сохранить изображение».' : 'Шумо метавонед ин чекро мустақиман тавассути Telegram ё WhatsApp ба мизоҷ фиристед.'}</p>`,
         foot: `<button type="button" class="btn lg" data-dl disabled>${ic('download', 17)}Боргирӣ</button>
-            <button type="button" class="btn primary lg" data-share disabled>${ic('share', 17)}Фиристодан</button>`
+            <button type="button" class="btn primary lg" data-share disabled>${ic('share', 17)}Фиристодан<span class="wide-only">&nbsp;ба мизоҷ</span></button>`
     });
-    let file = null, url = '';
-    const name = `DELUS-qarz-${receiptData(c).no.replace(/\D/g, '')}-${today()}.png`;
+    let file = null, url = '', name = '', cur = mode, turn = 0;
     const download = (quiet = false) => {
         const a = document.createElement('a');
         a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
-        if (!quiet) toast('Чек ҳамчун акс боргирӣ шуд');
+        if (!quiet) toast('Чек бо муваффақият боргирӣ шуд');
     };
     $('[data-dl]', m.el).onclick = () => download();
     /* share бояд фавран дар ҳамон пахши тугма даъват шавад (iPhone дигар иҷозат намедиҳад), бинобар ин акс пешакӣ тайёр аст */
     $('[data-share]', m.el).onclick = () => {
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            navigator.share({ files: [file], title: `Чеки қарз — ${c.name}` }).catch(e => {
+            navigator.share({ files: [file], title: `Чеки насия — ${c.name}` }).catch(e => {
                 if (e && e.name === 'AbortError') return;
                 download();
             });
@@ -386,16 +416,34 @@ function debtReceipt(key) {
     };
     const prevOnClose = m.onClose;
     m.onClose = () => { if (url) setTimeout(() => URL.revokeObjectURL(url), 60000); if (prevOnClose) prevOnClose(); };
-    receiptBlob(c).then(({ blob }) => {
-        if (!m.el.isConnected) return;
-        file = new File([blob], name, { type: 'image/png' });
-        url = URL.createObjectURL(blob);
-        $('[data-prev]', m.el).innerHTML = `<img src="${url}" alt="Чеки қарз — ${esc(c.name)}">`;
-        $$('[data-dl], [data-share]', m.el).forEach(b => { b.disabled = false; });
-    }).catch(e => {
-        $('[data-prev]', m.el).innerHTML = `<div class="rcpt-wait">${esc(errText(e))}</div>`;
-        if (!e.known) console.error(e);
+    /* чекро месозад; агар корбар дар ин миён навъи дигарро интихоб кунад, натиҷаи кӯҳна партофта мешавад */
+    const build = md => {
+        const my = ++turn;
+        $$('[data-dl], [data-share]', m.el).forEach(b => { b.disabled = true; });
+        $('[data-prev]', m.el).innerHTML = '<div class="rcpt-wait"><span class="lb-spin"></span>Чек омода мешавад…</div>';
+        receiptBlob(c, md).then(({ blob, R }) => {
+            if (!m.el.isConnected || my !== turn) return;
+            if (url) URL.revokeObjectURL(url);
+            name = `DELUS-${R.kind === 'all' ? 'hisob' : 'qarz'}-${R.no.replace(/\D/g, '')}-${today()}.png`;
+            file = new File([blob], name, { type: 'image/png' });
+            url = URL.createObjectURL(blob);
+            $('[data-prev]', m.el).innerHTML = `<img src="${url}" alt="Чеки насия — ${esc(c.name)}">`;
+            $$('[data-dl], [data-share]', m.el).forEach(b => { b.disabled = false; });
+        }).catch(e => {
+            if (my !== turn) return;
+            $('[data-prev]', m.el).innerHTML = `<div class="rcpt-wait">${esc(errText(e))}</div>`;
+            if (!e.known) console.error(e);
+        });
+    };
+    const sg = $('.rcpt-seg', m.el);
+    if (sg) sg.addEventListener('click', e => {
+        const b = e.target.closest('[data-mode]');
+        if (!b || b.dataset.mode === cur) return;
+        cur = b.dataset.mode;
+        $$('[data-mode]', sg).forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', x === b); });
+        build(cur);
     });
+    build(cur);
     return m;
 }
 

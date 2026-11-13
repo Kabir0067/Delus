@@ -69,8 +69,11 @@ const Modal = {
     },
     close(m) {
         Modal.remove(m || Modal.top());
-        /* Агар дарҳол тирезаи нав кушода нашавад, таърихи браузерро як қадам бармегардонем */
-        setTimeout(() => {
+        /* Агар дарҳол тирезаи нав кушода нашавад, таърихи браузерро як қадам бармегардонем.
+           Танҳо як бор: вақте якчанд тиреза якбора баста мешавад, ду «қафо» барномаро тарк мекард. */
+        if (Modal.backTimer || Modal.ownBack) return;
+        Modal.backTimer = setTimeout(() => {
+            Modal.backTimer = 0;
             if (!Modal.stack.length && history.state && history.state.modal) { Modal.ownBack = true; history.back(); }
         }, 0);
     },
