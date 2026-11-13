@@ -11,7 +11,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-title" content="DELUS">
     <meta name="format-detection" content="telephone=no">
-    <title>DELUS — идораи мол ва савдо</title>
+    <title>DELUS · Идоракунии савдо ва анбор</title>
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="icon" href="assets/img/icon.svg" type="image/svg+xml">
     <link rel="apple-touch-icon" href="assets/img/icon-180.png">
@@ -19,7 +19,7 @@
         /* Мавзӯъро пеш аз намоиш мегузорем, то экран нахузад */
         try { var t = localStorage.getItem('delus.theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) { }
     </script>
-    <meta name="description" content="DELUS — барномаи идораи мол, анбор, фурӯш, қарз ва ҳисобот барои мағоза.">
+    <meta name="description" content="DELUS · Системаи содда ва мукаммали идоракунии савдо, анбор ва ҳисобот барои соҳибкорон.">
     <link rel="stylesheet" href="assets/css/style.css?v=1">
     <!-- Сервер ин 6 файлро ба як файли app.js ҷамъ мекунад (як дархост ба ҷои шаш); ?v худкор аз мундариҷа ҳисоб мешавад -->
     <script src="assets/js/app.js?v=1" defer></script>
@@ -165,6 +165,9 @@
             <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M10.6 5.1A10 10 0 0 1 12 5c6.4 0 10 7 10 7a17 17 0 0 1-2.7 3.6M6.6 6.6C3.6 8.4 2 12 2 12s3.6 7 10 7a9.6 9.6 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2M3 3l18 18"/></symbol>
             <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-3.5 8-10V5l-8-3-8 3v7c0 6.5 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></symbol>
             <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+            <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="m8.3 13.3 7.4 4.4M15.7 6.3l-7.4 4.4"/></symbol>
+            <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 20h14"/></symbol>
+            <symbol id="i-receipt" viewBox="0 0 24 24"><path d="M5 3h14v18l-2.3-1.5L14.3 21 12 19.5 9.7 21l-2.4-1.5L5 21z"/><path d="M9 8h6M9 12h6M9 16h3"/></symbol>
             <symbol id="i-more" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><rect x="14" y="14" width="6" height="6" rx="1.5"/></symbol>
         </defs>
     </svg>
@@ -181,48 +184,48 @@
             <section class="login-hero">
                 <div class="lh-brand">
                     <span class="brand-mark"><svg class="ic" width="18" height="18"><use href="#i-logo"></use></svg></span>
-                    <span><b>DELUS</b><small>Анбор ва савдо</small></span>
+                    <span><b>DELUS</b><small>Идоракунии савдо ва анбор</small></span>
                 </div>
                 <div class="lh-body">
-                    <h2>Анбор, фурӯш ва қарз —<br>ҳама дар як ҷо</h2>
-                    <p>Бақияи мол, фурӯши рӯз ва қарзи мизоҷонро дар ҳар лаҳза бинед — аз компютер ё телефон.</p>
+                    <h2>Ҳамаи тиҷорати шумо дар як ҷо</h2>
+                    <p>Назорати пурраи молҳо, савдои ҳаррӯза ва ҳисобу китоби дӯкон бевосита дар телефони шумо.</p>
                     <ul class="lh-list">
                         <li><span class="lh-i"><svg class="ic" width="18" height="18"><use href="#i-box"></use></svg></span>
-                            <span><b>Бақия дар ҳар ҷой</b><small>Анбор ва мағоза алоҳида</small></span></li>
+                            <span><b>Ҳисоби дақиқи молҳо</b><small>Склад ва мағоза зери назорати доимӣ</small></span></li>
                         <li><span class="lh-i"><svg class="ic" width="18" height="18"><use href="#i-chart"></use></svg></span>
-                            <span><b>Ҳисоботи равшан</b><small>Фурӯш, фоида ва хароҷот</small></span></li>
+                            <span><b>Савдо ва даромад</b><small>Фурӯши рӯз, фоидаи соф ва хароҷот</small></span></li>
                         <li><span class="lh-i"><svg class="ic" width="18" height="18"><use href="#i-debt"></use></svg></span>
-                            <span><b>Қарзи мизоҷон</b><small>Кӣ чанд қарздор аст ва кай медиҳад</small></span></li>
+                            <span><b>Дафтари қарз ва насия</b><small>Рӯйхати мизоҷон ва муҳлати пардохт</small></span></li>
                     </ul>
                 </div>
-                <small class="lh-foot">© DELUS · Идораи мол ва савдо</small>
+                <small class="lh-foot">DELUS · Системаи боэътимоди идоракунии савдо</small>
             </section>
 
             <!-- Формаи воридшавӣ -->
             <form id="loginForm" class="login-card" autocomplete="on" novalidate>
-                <h1>Хуш омадед</h1>
-                <p class="login-sub">Барои идома ба ҳисоби худ ворид шавед</p>
+                <h1>Хуш омадед!</h1>
+                <p class="login-sub">Барои ворид шудан номи корбар ва рамзро нависед</p>
 
                 <label class="field">
-                    <span class="field-l">Логин</span>
+                    <span class="field-l">Номи корбар (Логин)</span>
                     <span class="in-ic">
                         <svg class="ic" width="18" height="18" aria-hidden="true"><use href="#i-user"></use></svg>
                         <input id="loginUser" name="username" type="text" autocomplete="username" autocapitalize="none"
-                            spellcheck="false" placeholder="Логини худро нависед" enterkeyhint="next" required>
+                            spellcheck="false" placeholder="Номи корбарро ворид кунед" enterkeyhint="next" required>
                     </span>
                 </label>
                 <label class="field">
-                    <span class="field-l">Парол</span>
+                    <span class="field-l">Рамзи махфӣ (Парол)</span>
                     <span class="in-ic">
                         <svg class="ic" width="18" height="18" aria-hidden="true"><use href="#i-lock"></use></svg>
                         <input id="loginPass" name="password" type="password" autocomplete="current-password"
-                            placeholder="Пароли худро нависед" enterkeyhint="go" required>
+                            placeholder="Рамзи худро ворид кунед" enterkeyhint="go" required>
                         <button type="button" class="pw-eye" id="pwEye" aria-label="Паролро нишон додан" aria-pressed="false">
                             <svg class="ic eye-on" width="18" height="18" aria-hidden="true"><use href="#i-eye"></use></svg>
                             <svg class="ic eye-off" width="18" height="18" aria-hidden="true"><use href="#i-eye-off"></use></svg>
                         </button>
                     </span>
-                    <span class="caps" id="capsWarn" hidden>Ҳарфҳои калон (Caps Lock) фаъол аст</span>
+                    <span class="caps" id="capsWarn" hidden>Тугмаи Caps Lock фаъол аст</span>
                 </label>
 
                 <p id="loginError" class="form-err" role="alert" hidden></p>
@@ -231,7 +234,7 @@
                     <svg class="ic lb-arrow" width="18" height="18" aria-hidden="true"><use href="#i-arrow"></use></svg>
                     <span class="lb-spin" aria-hidden="true"></span>
                 </button>
-                <p class="login-safe"><svg class="ic" width="15" height="15" aria-hidden="true"><use href="#i-shield"></use></svg>Пайвасти бехатар. Паролро ба касе нагӯед.</p>
+                <p class="login-safe"><svg class="ic" width="15" height="15" aria-hidden="true"><use href="#i-shield"></use></svg>Маълумот ва ҳисобҳои шумо пурра муҳофизат шудаанд</p>
             </form>
         </div>
     </div>

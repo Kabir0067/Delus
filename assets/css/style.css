@@ -1223,3 +1223,15 @@ details.extra[open] summary { padding-bottom: 10px; }
     .pcard:hover { transform: none; box-shadow: var(--shadow-s); }
     .pcard:hover .pcard-img .thumb img { transform: none; }
 }
+
+/* ---------- чеки қарз: пешнамоиш ---------- */
+.rcpt-prev {
+    display: grid; place-items: start center; min-height: 240px; max-height: min(62vh, calc(var(--vvh) - 270px)); overflow: auto;
+    padding: 14px; border-radius: var(--r-md); background: #e8ecf4;
+    overscroll-behavior: contain;
+}
+.rcpt-prev img { display: block; width: 100%; max-width: 440px; height: auto; border-radius: 12px; box-shadow: 0 18px 40px -18px rgb(15 26 51 / .45); }
+.rcpt-wait { align-self: center; display: flex; align-items: center; gap: 10px; color: #47536b; font-size: 14px; font-weight: 500; }
+.rcpt-wait .lb-spin { display: block; border-color: rgb(47 86 224 / .25); border-top-color: var(--brand); }
+.rcpt-hint { margin: 12px 2px 0; font-size: 13px; color: var(--ink-3); text-align: center; }
+.sheet-f [data-share], .sheet-f [data-dl] { flex: 1 1 0; }

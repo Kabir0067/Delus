@@ -315,8 +315,8 @@ async function saveDoc(kind, lines, data) {
         const short = lines.filter(l => num(l.q) > qtyAt(l.p.id, src));
         if (short.length) {
             const go_ = await ask({
-                title: 'Бақия намерасад',
-                text: `${short.map(l => `${l.p.name}: ${qty(qtyAt(l.p.id, src))} ${unitOf(l.p)}`).join('; ')}. Бо вуҷуди ин сабт кунем? Бақия манфӣ мешавад.`,
+                title: 'Ин қадар мол дар анбор нест',
+                text: `${short.map(l => `${l.p.name}: дар анбор ҳамагӣ ${qty(qtyAt(l.p.id, src))} ${unitOf(l.p)} мондааст`).join('; ')}. Бо вуҷуди ин мефурӯшед? Ҳисоби мол дар анбор манфӣ мешавад.`,
                 ok: 'Сабт кардан'
             });
             if (!go_) return false;
@@ -388,21 +388,21 @@ function fixModal(preset = null, locId = '') {
         body: `${field('Ҷой', `<select name="loc">${locOptions(locId || locs[0].id)}</select>`)}
             <div class="field"><span class="field-l">Мол</span><div data-pick></div></div>
             <div class="note" data-cur style="margin-top:14px" hidden></div>
-            ${field('Дар асл чанд ҳаст?', '<input type="text" inputmode="decimal" name="real" autocomplete="off">', 'Агар рақам бо система фарқ кунад, барнома бақияро дуруст мекунад ва фарқро дар «Амалиётҳо» сабт мекунад.')}
+            ${field('Дар асл чанд ҳаст?', '<input type="text" inputmode="decimal" name="real" autocomplete="off">', 'Агар рақам бо система фарқ кунад, барнома ҳисоби молро дуруст мекунад ва фарқро дар «Амалиётҳо» сабт мекунад.')}
             ${field('Эзоҳ <em>(ихтиёрӣ)</em>', '<input type="text" name="note" maxlength="200" placeholder="Масалан: мол шикаста буд">')}`,
         async onSubmit(d) {
             if (!prod) throw bad('Молро интихоб кунед.');
             if (String(d.real).trim() === '') throw bad('Миқдори воқеиро нависед.');
             const now = qtyAt(prod.id, d.loc), real = num(d.real), diff = round3(real - now);
-            if (!diff) { toast('Бақия дуруст аст, тағйир лозим нест.'); return; }
+            if (!diff) { toast('Миқдори мол дуруст аст, тағйир лозим нест.'); return; }
             await addTx([{
                 date: nowStr(), type: 'ADJUSTMENT', product_id: prod.id,
                 from_location_id: diff < 0 ? num(d.loc) : '', to_location_id: diff > 0 ? num(d.loc) : '',
                 quantity: Math.abs(diff), unit: unitOf(prod),
                 unit_cost: num(prod.purchase_price), unit_price: num(prod.sale_price),
-                note: String(d.note || '').trim() || `Бақия: ${qty(now)} → ${qty(real)}`
+                note: String(d.note || '').trim() || `Шумориш: ${qty(now)} → ${qty(real)}`
             }]);
-            toast('Бақия дуруст шуд');
+            toast('Ҳисоби мол дуруст шуд');
         }
     });
     const cur_ = $('[data-cur]', m.el), loc = $('[name=loc]', m.el);
@@ -430,7 +430,7 @@ function productView(id) {
         body: `<div class="pv-photo ${imgSrc(p) ? '' : 'none'}">${thumb(p, 'cover')}${imgSrc(p) ? '' : `<button class="btn sm pv-add" data-act="prodEdit" data-id="${esc(p.id)}">${ic('camera', 15)}Акс гузоштан</button>`}</div>
         <div class="pv-head"><b>${esc(p.name)}</b><small>${esc([p.product_code, p.category].filter(Boolean).join(' · '))}</small></div>
         <div class="facts">
-            <div><small>Бақия</small><b>${qty(qtyAll(p.id))} ${esc(unitOf(p))}</b></div>
+            <div><small>Дар анбор</small><b>${qty(qtyAll(p.id))} ${esc(unitOf(p))}</b></div>
             <div><small>Нархи фурӯш</small><b>${fmt(p.sale_price, 2)}</b></div>
             <div><small>Нархи харид</small><b>${fmt(p.purchase_price, 2)}</b></div>
             <div><small>Фоида аз 1 ${esc(unitOf(p))}</small><b>${fmt(profit, 2)}</b></div>
@@ -440,7 +440,7 @@ function productView(id) {
             <button class="btn t-buy" data-act="buy" data-id="${esc(p.id)}">${ic('in', 16)}Воридот</button>
             <button class="btn t-move" data-act="move" data-id="${esc(p.id)}">${ic('move', 16)}Интиқол</button>
         </div>` : ''}
-        <div class="sec-h"><p class="sec-t">Бақия дар ҷойҳо</p>${on ? `<button class="btn quiet sm" data-act="fix" data-id="${esc(p.id)}">Бақия нодуруст аст?</button>` : ''}</div>
+        <div class="sec-h"><p class="sec-t">Мол дар анбор ва мағоза</p>${on ? `<button class="btn quiet sm" data-act="fix" data-id="${esc(p.id)}">Миқдор нодуруст аст?</button>` : ''}</div>
         ${S.locations.filter(l => isActive(l) || qtyAt(p.id, l.id) !== 0).map(l => `<div class="kv"><span>${esc(l.name)}</span><b class="${qtyAt(p.id, l.id) < 0 ? 'neg' : ''}">${qty(qtyAt(p.id, l.id))} ${esc(unitOf(p))}</b></div>`).join('')}
         ${specs.length ? `<p class="sec-t">Хусусиятҳо</p>${specs.map(([k, v]) => `<div class="kv"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}` : ''}
         ${p.description ? `<p class="sec-t">Тавсиф</p><p class="card-p" style="margin:6px 0 0">${esc(p.description)}</p>` : ''}
@@ -480,7 +480,7 @@ function productForm(p = null, { name = '', noOpening = false, onSaved } = {}) {
             ${field('Нархи фурӯш', `<input type="text" inputmode="decimal" name="sale_price" value="${numVal(v.sale_price)}" autocomplete="off">`)}
         </div>
         ${!editing && !noOpening ? `<div class="grid2">
-            ${field('Бақияи аввал <em>(ихтиёрӣ)</em>', '<input type="text" inputmode="decimal" name="opening" autocomplete="off">')}
+            ${field('Миқдори ҳозира дар анбор <em>(ихтиёрӣ)</em>', '<input type="text" inputmode="decimal" name="opening" autocomplete="off">')}
             ${field('Дар куҷо', `<select name="opening_loc">${locOptions((activeLocs()[0] || {}).id)}</select>`)}
         </div>` : ''}
         <details class="extra" ${extra ? 'open' : ''}>
@@ -519,8 +519,8 @@ function productForm(p = null, { name = '', noOpening = false, onSaved } = {}) {
             if (twin && (!p || norm(p.name) !== norm(nm))) {
                 const pickTwin = await choose({
                     title: 'Ин мол аллакай ҳаст',
-                    text: `«${twin.name}» дар анбор ${qty(qtyAll(twin.id))} ${unitOf(twin)} дорад. Моли омадаро ба ҳамин мол илова кунем? Бақия танҳо зиёд мешавад.`,
-                    options: [['add', `Ба «${twin.name}» илова кардан`, 'primary'], ['new', 'Не, моли дигар аст — алоҳида сохтан', '']]
+                    text: `«${twin.name}» аллакай дар система ҳаст ва ҳоло ${qty(qtyAll(twin.id))} ${unitOf(twin)} мавҷуд аст. Моли омадаро ба ҳамин мол илова кунем?`,
+                    options: [['add', `Ба «${twin.name}» илова кардан`, 'primary'], ['new', 'Не, моли нав аст (алоҳида сабт шавад)', '']]
                 });
                 if (!pickTwin) return false;
                 if (pickTwin === 'add') {
@@ -557,8 +557,8 @@ function productForm(p = null, { name = '', noOpening = false, onSaved } = {}) {
                 const open = num(d.opening);
                 if (open > 0 && d.opening_loc && !await thenTry(() => addTx([{
                     date: nowStr(), type: 'PURCHASE', product_id: saved.id, from_location_id: '', to_location_id: num(d.opening_loc),
-                    quantity: open, unit: saved.unit, unit_cost: saved.purchase_price, unit_price: saved.sale_price, note: 'Бақияи аввал'
-                }]), 'Мол илова шуд, вале бақияи аввал сабт нашуд. Онро бо «Воридот» илова кунед.')) return;
+                    quantity: open, unit: saved.unit, unit_cost: saved.purchase_price, unit_price: saved.sale_price, note: 'Моли мавҷуда (воридоти аввал)'
+                }]), 'Мол сабт шуд, вале миқдори аввал сабт нашуд. Метавонед онро бо «Воридот» илова кунед.')) return;
                 toast('Мол илова шуд');
                 if (onSaved) onSaved(saved);
             }
@@ -604,7 +604,7 @@ function productForm(p = null, { name = '', noOpening = false, onSaved } = {}) {
         $('[data-archive]', m.el).onclick = async () => {
             const toArchive = isActive(p), q = qtyAll(p.id);
             if (toArchive && q !== 0) {
-                const yes = await ask({ title: 'Дар анбор бақия ҳаст', text: `«${p.name}»: ${qty(q)} ${unitOf(p)}. Мол аз ҳисобот пинҳон мешавад. Ба бойгонӣ гузорем?`, ok: 'Ба бойгонӣ гузоштан' });
+                const yes = await ask({ title: 'Ин мол ҳанӯз дар анбор ҳаст', text: `Дар анбор ${qty(q)} ${unitOf(p)} аз «${p.name}» мондааст. Агар ба бойгонӣ гузоред, мол аз рӯйхат пинҳон мешавад. Розиед?`, ok: 'Ба бойгонӣ гузоштан' });
                 if (!yes) return;
             }
             try {
@@ -670,7 +670,7 @@ function txView(id) {
     $('[data-del]', m.el).onclick = async () => {
         const yes = await ask({
             title: 'Нест кардани амалиёт',
-            text: `${T.t} (${x.transaction_code}) нест мешавад ва бақия аз нав ҳисоб мегардад.${debt ? ` Ин чек ба қарзи «${debt.customer}» вобаста аст — қарзро дар бахши «Қарз» дуруст кунед.` : ''}`,
+            text: `${T.t} (${x.transaction_code}) нест карда мешавад ва ҳисоби молҳо аз нав дуруст мешавад.${debt ? ` Ин чек ба қарзи «${debt.customer}» вобаста аст — қарзро дар бахши «Қарз» дуруст кунед.` : ''}`,
             ok: 'Нест кардан', danger: true
         });
         if (!yes) return;
@@ -820,7 +820,7 @@ function locForm(l = null) {
         try {
             if (isActive(l)) {
                 const left = S.products.filter(p => qtyAt(p.id, l.id) !== 0).length;
-                if (left) throw bad(`Дар ин ҷо ${fmt(left)} мол бақия дорад. Аввал онро интиқол диҳед.`);
+                if (left) throw bad(`Дар ин ҷо ҳанӯз ${fmt(left)} мол ҳаст. Аввал молҳоро ба анбори дигар гузаронед, баъд нест кунед.`);
                 if (activeLocs().length < 2) throw bad('Ақаллан як ҷой бояд фаъол бошад.');
             }
             await saveLocation(l, { status: isActive(l) ? 'INACTIVE' : 'ACTIVE' });
@@ -856,7 +856,7 @@ function cfgLow() {
         body: field('Миқдор', `<input type="text" inputmode="decimal" name="v" value="${esc(S.cfg.low_stock_default)}" data-auto autocomplete="off">`, 'Барои як мол метавонед дар корти он ҳадди алоҳида гузоред.'),
         async onSubmit(d) {
             if (String(d.v).trim() === '' || num(d.v) < 0) throw bad('Рақамро дуруст нависед.');
-            await setSetting('low_stock_default', num(d.v), 'Агар бақияи мол аз ин рақам кам бошад, «кам мондааст» нишон дода мешавад');
+            await setSetting('low_stock_default', num(d.v), 'Агар миқдори мол аз ин кам шавад, огоҳӣ медиҳад, ки мол кам мондааст');
             toast('Сабт шуд');
         }
     });
@@ -895,6 +895,7 @@ const ACT = {
     debtNew: el => debtForm(null, el.dataset.id ? custBy(el.dataset.id) : null),
     debtorView: el => debtorView(el.dataset.id),
     debtPay: el => payForm(custBy(el.dataset.id)),
+    debtReceipt: el => debtReceipt(el.dataset.id),
     navMore: () => moreSheet(),
     expNew: () => expenseForm(),
     expEdit: el => expenseForm(S.exp.find(x => String(x.id) === el.dataset.id)),
@@ -1049,11 +1050,11 @@ $('#loginForm').addEventListener('submit', async e => {
     const userEl = $('#loginUser'), passEl = $('#loginPass');
     const user = userEl.value.trim(), pass = passEl.value.trim();
     err.hidden = true;
-    if (!user) return loginFail('Логини худро нависед.', userEl);
-    if (!pass) return loginFail('Пароли худро нависед.', passEl);
+    if (!user) return loginFail('Номи корбарро (логин) нависед.', userEl);
+    if (!pass) return loginFail('Рамзро (парол) нависед.', passEl);
     btn.disabled = true;
     btn.classList.add('busy');
-    label.textContent = 'Ворид мешавад…';
+    label.textContent = 'Санҷиш ва воридшавӣ…';
     try {
         startSession(await serverCall('/login', { user, pass }));
         await enterApp();

@@ -62,6 +62,7 @@ PAGES.debt = {
                     ${c.late ? `<span class="pill bad">${ic('warn', 13)}Мӯҳлат гузашт</span>` : c.left <= MONEY_EPS ? `<span class="pill good">${ic('check', 13)}Пардохт шуд</span>` : `<span class="pill">Супорид ${pctPaid(c)}%</span>`}
                     <span class="debtor-btns">
                         ${c.phone ? `<a class="btn sm" href="${esc(telHref(c.phone))}" aria-label="Занг задан">${ic('phone', 14)}<span>Занг</span></a>` : ''}
+                        <button class="btn sm t-buy" data-act="debtReceipt" data-id="${esc(c.key)}" aria-label="Чеки қарз" title="Чеки қарз: фиристодан ё боргирӣ">${ic('receipt', 14)}<span>Чек</span></button>
                         ${c.left > MONEY_EPS ? `<button class="btn sm t-sale" data-act="debtPay" data-id="${esc(c.key)}">${ic('wallet', 14)}Пардохт</button>` : ''}
                     </span>
                 </div>
@@ -90,6 +91,7 @@ function debtorView(key) {
             <div class="quick">
                 ${c.left > MONEY_EPS ? `<button class="btn t-sale" data-pay>${ic('wallet', 16)}Пардохт</button>
                 <button class="btn t-buy" data-full>${ic('check', 16)}Пурра бастан</button>` : ''}
+                <button class="btn t-move" data-receipt>${ic('receipt', 16)}Чеки қарз</button>
                 <button class="btn" data-new>${ic('plus', 16)}Қарзи нав</button>
                 ${c.phone ? `<a class="btn" href="${esc(telHref(c.phone))}">${ic('phone', 16)}Занг</a>` : ''}
             </div>
@@ -122,6 +124,7 @@ function debtorView(key) {
     $$('[data-pay]', m.el).forEach(b => b.onclick = () => { m.close(); payForm(c, { onDone: again }); });
     $$('[data-full]', m.el).forEach(b => b.onclick = () => { m.close(); payForm(c, { full: true, onDone: again }); });
     $$('[data-new]', m.el).forEach(b => b.onclick = () => { m.close(); debtForm(null, c, again); });
+    $$('[data-receipt]', m.el).forEach(b => b.onclick = () => debtReceipt(key));
     $$('[data-edit]', m.el).forEach(b => b.onclick = () => { m.close(); debtForm(I.debt.get(b.dataset.edit), null, again); });
     $$('[data-delpay]', m.el).forEach(b => b.onclick = async () => {
         const p = S.pays.find(x => String(x.id) === b.dataset.delpay);
@@ -130,6 +133,270 @@ function debtorView(key) {
         try { await deletePayment(p); toast('Пардохт нест карда шуд'); m.close(); again(); }
         catch (e) { showErr(e); }
     });
+}
+
+/* ==================================================================
+   ЧЕКИ ҚАРЗ — акси PNG барои фиристодан (Telegram, WhatsApp, …) ё боргирӣ
+   Чек ҳамеша равшан аст (мисли коғаз), новобаста ба мавзӯи барнома.
+   ================================================================== */
+const dateLong = d => { const [y, m, n] = String(d || '').slice(0, 10).split('-').map(Number); return m ? `${n}\u00a0${MONTHS[m - 1]}и\u00a0${y}` : ''; };
+const daysTo = d => Math.round(strToSerial(String(d).slice(0, 10)) - strToSerial(today()));
+const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+/* Кадом қарзҳо дар чек: ҳамаи қарзҳои кушода; агар ҳама пӯшида бошанд — се қарзи охирин */
+function receiptData(c) {
+    const open = c.debts.filter(d => !d._closed);
+    const debts = (open.length ? open : c.debts.slice(-3)).slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const ids = new Set(debts.map(d => String(d.id)));
+    const pays = S.pays.filter(p => ids.has(String(p.debt_id))).sort((a, b) => String(a.date).localeCompare(String(b.date)) || num(a.id) - num(b.id));
+    const amount_ = debts.reduce((s, d) => s + num(d.amount), 0);
+    const paid = debts.reduce((s, d) => s + d._paid, 0);
+    const left = Math.max(0, Math.round((amount_ - paid) * 100) / 100);
+    const dues = debts.filter(d => !d._closed && d.due_date).map(d => String(d.due_date).slice(0, 10)).sort();
+    const closed = left <= MONEY_EPS;
+    const late = !closed && debts.some(d => d._late);
+    return { c, debts, pays, amount: amount_, paid, left, due: dues[0] || '', closed, late, no: 'Қ-' + pad5(Math.max(...debts.map(d => num(d.id)))) };
+}
+
+async function receiptFonts() {
+    if (!document.fonts || !document.fonts.load) return;
+    const sample = 'Ҳҷӯӣқғ АБВабв ABCabc 0123,.';
+    await Promise.race([Promise.all(['400', '500', '600', '700'].map(w => document.fonts.load(`${w} 32px Inter`, sample))), sleep(3000)]).catch(() => { });
+}
+
+/* Чекро мекашад. H = null: танҳо баландиро ҳисоб мекунад. */
+function receiptPaint(g, R, H) {
+    const W = 1080, M = 40, X = M + 64, XR = W - X, CW = XR - X;
+    const C = { ink: '#0f1a33', ink2: '#47536b', ink3: '#7a8499', line: '#e3e7f0', soft: '#f4f6fb', navy1: '#0b1430', navy2: '#1b2c6b', gold: '#f7b733', gold2: '#f09819', green: '#0b8a63', greenBg: '#e3f6ee', red: '#c9342a', redBg: '#fdebe9', amber: '#b4690e', amberBg: '#fff4e0', brand: '#2f56e0', brandBg: '#ebf0ff' };
+    const draw = H !== null;
+    const F = (w, s) => `${w} ${s}px Inter, "Segoe UI", Roboto, Arial, sans-serif`;
+    const T = (t, x, y, s, w = 400, col = C.ink, align = 'left') => { if (!draw) return; g.font = F(w, s); g.fillStyle = col; g.textAlign = align; g.textBaseline = 'alphabetic'; g.fillText(t, x, y); };
+    const width = (t, s, w = 400) => { g.font = F(w, s); return g.measureText(t).width; };
+    const fit = (t, max, s, w = 400) => { t = String(t); if (width(t, s, w) <= max) return t; while (t.length > 1 && width(t + '…', s, w) > max) t = t.slice(0, -1); return t + '…'; };
+    const wrap = (t, max, s, w = 400) => {
+        const out = []; let line = '';
+        for (const word of String(t).split(/[ \t\n]+/)) { const next = line ? line + ' ' + word : word; if (line && width(next, s, w) > max) { out.push(line); line = word; } else line = next; }
+        if (line) out.push(line); return out;
+    };
+    const box = (x, y, w, h, r, fill) => { if (!draw) return; g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, r); else g.rect(x, y, w, h); g.fillStyle = fill; g.fill(); };
+    const caps = (t, x, y, col = C.ink3, align = 'left', s = 21) => { if (!draw) return; if ('letterSpacing' in g) g.letterSpacing = '2.5px'; T(t, x, y, s, 700, col, align); if ('letterSpacing' in g) g.letterSpacing = '0px'; };
+    const dash = y => { if (!draw) return; g.save(); g.strokeStyle = C.line; g.lineWidth = 2; g.setLineDash([10, 9]); g.beginPath(); g.moveTo(X, y); g.lineTo(XR, y); g.stroke(); g.restore(); };
+    const pill = (t, xr, y, fg, bg) => { const w = width(t, 23, 700) + 66; box(xr - w, y - 34, w, 48, 24, bg); if (draw) { g.beginPath(); g.arc(xr - w + 26, y - 10, 6, 0, Math.PI * 2); g.fillStyle = fg; g.fill(); } T(t, xr - 22, y - 2, 23, 700, fg, 'right'); };
+    const nf = n => fmt(n, 2), cur_ = cur();
+    const sum = n => nf(n) + '\u00a0' + cur_;
+    const st = R.closed ? { t: 'Пардохт шуд', fg: C.green, bg: C.greenBg } : R.late ? { t: 'Мӯҳлат гузашт', fg: C.red, bg: C.redBg } : { t: 'Кушода', fg: C.amber, bg: C.amberBg };
+
+    /* ---- замина ва коғаз ---- */
+    if (draw) {
+        g.fillStyle = '#e8ecf4'; g.fillRect(0, 0, W, H);
+        const bottom = H - M - 18;
+        g.save();
+        g.shadowColor = 'rgba(15,26,51,.16)'; g.shadowBlur = 50; g.shadowOffsetY = 18;
+        g.beginPath();
+        g.moveTo(M, M + 36); g.arcTo(M, M, M + 36, M, 36); g.lineTo(W - M - 36, M); g.arcTo(W - M, M, W - M, M + 36, 36);
+        g.lineTo(W - M, bottom);
+        const teeth = 30, tw_ = (W - 2 * M) / teeth;
+        for (let i = 0; i < teeth; i++) { const x0 = W - M - i * tw_; g.lineTo(x0 - tw_ / 2, bottom + 18); g.lineTo(x0 - tw_, bottom); }
+        g.closePath(); g.fillStyle = '#fff'; g.fill(); g.restore();
+    }
+
+    /* ---- сарлавҳа ---- */
+    const HH = 236;
+    if (draw) {
+        g.save(); g.beginPath();
+        if (g.roundRect) g.roundRect(M, M, W - 2 * M, HH, [36, 36, 0, 0]); else g.rect(M, M, W - 2 * M, HH);
+        const gr = g.createLinearGradient(M, M, W - M, M + HH); gr.addColorStop(0, C.navy1); gr.addColorStop(1, C.navy2);
+        g.fillStyle = gr; g.fill(); g.clip();
+        const glow = g.createRadialGradient(W - M - 60, M + 10, 0, W - M - 60, M + 10, 360); glow.addColorStop(0, 'rgba(247,183,51,.28)'); glow.addColorStop(1, 'rgba(247,183,51,0)');
+        g.fillStyle = glow; g.fillRect(M, M, W - 2 * M, HH);
+        g.restore();
+        // нишонаи бренд: квадрати тиллоӣ бо барқ
+        const bx = X, by = M + 58, bs = 84;
+        const bg_ = g.createLinearGradient(bx, by, bx + bs, by + bs); bg_.addColorStop(0, '#ffd45e'); bg_.addColorStop(1, C.gold2);
+        box(bx, by, bs, bs, 24, bg_);
+        g.save(); g.translate(bx + 14, by + 14); g.scale(56 / 24, 56 / 24); g.fillStyle = '#3a2300'; g.fill(new Path2D('M13.2 2 4 14h6.2L9.4 22 19 10h-6.4z')); g.restore();
+    }
+    T(fit(S.cfg.company_name || 'DELUS', 440, 44, 700), X + 108, M + 108, 44, 700, '#fff');
+    T('Анбор ва савдо', X + 108, M + 148, 25, 500, 'rgba(255,255,255,.62)');
+    caps('ҲУҶҶАТИ ҚАРЗ', XR, M + 84, C.gold, 'right', 22);
+    T('№ ' + R.no, XR, M + 128, 32, 700, '#fff', 'right');
+    T(dateLong(today()) + ', ' + nowStr().slice(11, 16), XR, M + 166, 24, 500, 'rgba(255,255,255,.62)', 'right');
+    let y = M + HH + 70;
+
+    /* ---- мизоҷ ---- */
+    caps('МИЗОҶ', X, y);
+    pill(st.t, XR, y + 6, st.fg, st.bg);
+    y += 70;
+    for (const l of wrap(R.c.name, CW, 50, 700).slice(0, 2)) { T(l, X, y, 50, 700); y += 60; }
+    if (R.c.phone) { T('Тел.: ' + R.c.phone, X, y - 6, 29, 500, C.ink2); y += 44; }
+    y += 18;
+
+    /* ---- маблағи асосӣ ---- */
+    const panelH = 248, py = y;
+    box(X - 28, py, CW + 56, panelH, 30, R.closed ? C.greenBg : R.late ? C.redBg : C.brandBg);
+    caps(R.closed ? 'ҚАРЗ ПУРРА ПАРДОХТ ШУД' : 'БОҚИМОНДА БАРОИ ПАРДОХТ', X, py + 56, R.closed ? C.green : R.late ? C.red : C.brand);
+    const big = nf(R.closed ? R.amount : R.left);
+    T(big, X, py + 150, 92, 700, R.closed ? C.green : R.late ? C.red : C.ink);
+    T(cur_, X + width(big, 92, 700) + 18, py + 150, 34, 600, C.ink2);
+    const pct = R.amount > 0 ? Math.min(1, R.paid / R.amount) : 0;
+    box(X, py + 180, CW, 14, 7, 'rgba(15,26,51,.08)');
+    if (pct > 0) box(X, py + 180, Math.max(14, CW * pct), 14, 7, C.green);
+    T(`Супорид ${nf(R.paid)} аз ${nf(R.amount)} ${cur_}`, X, py + 228, 24, 500, C.ink2);
+    T(Math.round(pct * 100) + '%', XR, py + 228, 24, 700, C.green, 'right');
+    if (R.closed && draw) {   // мӯҳри «Пардохт шуд»
+        g.save(); g.translate(XR - 100, py + 88); g.rotate(-0.22);
+        g.strokeStyle = 'rgba(11,138,99,.75)'; g.lineWidth = 5; g.beginPath(); g.arc(0, 0, 76, 0, Math.PI * 2); g.stroke();
+        g.lineWidth = 2; g.beginPath(); g.arc(0, 0, 65, 0, Math.PI * 2); g.stroke();
+        T('ПАРДОХТ', 0, -2, 24, 700, 'rgba(11,138,99,.85)', 'center'); T('ШУД', 0, 28, 24, 700, 'rgba(11,138,99,.85)', 'center');
+        g.restore();
+    }
+    y = py + panelH + 56;
+
+    /* ---- ҷумлаи асосӣ: кӣ, кай, чанд, то кай ---- */
+    const first = R.debts[0], lastD = R.debts[R.debts.length - 1];
+    let story = R.debts.length === 1
+        ? `${R.c.name} ${dateLong(first.date)} маблағи ${sum(first.amount)} қарз гирифтааст.`
+        : `${R.c.name} ${R.debts.length} маротиба қарз гирифтааст: аз ${dateLong(first.date)} то ${dateLong(lastD.date)}, ба маблағи умумии ${sum(R.amount)}.`;
+    if (R.due) story += ` Мӯҳлати пардохт: ${dateLong(R.due)}.`;
+    if (R.paid > MONEY_EPS && !R.closed) story += ` Аз он ${sum(R.paid)} супорида шуд, боқимонда ${sum(R.left)}.`;
+    if (R.closed) story += ' Қарз пурра баргардонида шуд.';
+    const sl = wrap(story, CW - 34, 30, 500);
+    if (draw) box(X, y - 34, 6, sl.length * 46 + 8, 3, C.gold);
+    for (const l of sl) { T(l, X + 30, y, 30, 500, C.ink2); y += 46; }
+    y += 34;
+
+    /* ---- қарзҳо ---- */
+    dash(y); y += 62;
+    caps(R.debts.length > 1 ? `ҚАРЗҲО (${R.debts.length})` : 'ТАФСИЛОТИ ҚАРЗ', X, y); y += 56;
+    for (const d of R.debts) {
+        T('Қарз аз ' + dateLong(d.date), X, y, 31, 700);
+        T(nf(d.amount), XR, y, 31, 700, C.ink, 'right');
+        y += 42;
+        const dd = d.due_date ? daysTo(d.due_date) : null;
+        const meta = [d.receipt_code ? 'Чеки ' + d.receipt_code : 'Қарзи дастӣ', d.due_date ? 'мӯҳлат: ' + dateLong(d.due_date) : ''].filter(Boolean).join(' · ');
+        T(fit(meta, CW - 230, 24, 500), X, y, 24, 500, C.ink3);
+        const tag = d._closed ? ['Пардохт шуд', C.green] : dd === null ? ['', C.ink3] : dd < 0 ? [`${-dd} рӯз гузашт`, C.red] : dd === 0 ? ['Имрӯз', C.amber] : [`боз ${dd} рӯз`, dd <= 3 ? C.amber : C.green];
+        if (tag[0]) T(tag[0], XR, y, 24, 700, tag[1], 'right');
+        y += 40;
+        const items = debtItems(d);
+        for (const t of items.slice(0, 10)) {
+            const p = prodBy(t.product_id) || {};
+            const right = `${qty(t.quantity)} × ${nf(t.unit_price)} = ${nf(num(t.quantity) * num(t.unit_price))}`;
+            const rw = width(right, 25, 500);
+            T('•  ' + fit(p.name || 'Мол', CW - rw - 40, 25, 400), X + 4, y, 25, 400, C.ink2);
+            T(right, XR, y, 25, 500, C.ink2, 'right');
+            y += 38;
+        }
+        if (items.length > 10) { T(`… ва боз ${items.length - 10} мол`, X + 4, y, 24, 500, C.ink3); y += 38; }
+        if (d.note) for (const l of wrap('Эзоҳ: ' + d.note, CW, 24, 400).slice(0, 2)) { T(l, X, y, 24, 400, C.ink3); y += 36; }
+        if (d._paid > MONEY_EPS && !d._closed) { T(`Супорид ${nf(d._paid)} · боқимонда ${nf(d._left)} ${cur_}`, X, y, 24, 600, C.brand); y += 38; }
+        y += 26;
+        if (d !== lastD) { if (draw) { g.fillStyle = C.line; g.fillRect(X, y - 20, CW, 2); } y += 24; }
+    }
+
+    /* ---- пардохтҳо ---- */
+    if (R.pays.length) {
+        dash(y); y += 62;
+        caps(`ПАРДОХТҲО (${R.pays.length})`, X, y); y += 54;
+        const shown = R.pays.slice(-12);
+        if (R.pays.length > 12) { T(`… пеш аз ин боз ${R.pays.length - 12} пардохт`, X, y, 24, 500, C.ink3); y += 38; }
+        for (const p of shown) {
+            const ret = String(p.method).toUpperCase() === 'RETURN';
+            T(dateLong(p.date) + (timeOf(p) ? ', ' + timeOf(p) : ''), X, y, 26, 500, C.ink);
+            T(METHODS[String(p.method).toUpperCase()] || METHODS.CASH, X + 470, y, 24, 500, C.ink3);
+            T((ret ? '−' : '+') + nf(p.amount), XR, y, 27, 700, ret ? C.ink2 : C.green, 'right');
+            y += 44;
+        }
+        y += 6;
+    }
+
+    /* ---- ҷамъ ---- */
+    dash(y); y += 64;
+    const row = (k, v, s, w, col) => { T(k, X, y, s, w === 700 ? 700 : 500, w === 700 ? C.ink : C.ink2); T(v, XR, y, s, w, col || C.ink, 'right'); y += s + 22; };
+    row('Ҳамагӣ қарз', `${nf(R.amount)} ${cur_}`, 28, 600);
+    row('Супорида шуд', `${nf(R.paid)} ${cur_}`, 28, 600, C.green);
+    if (draw) { g.fillStyle = C.ink; g.fillRect(X, y - 22, CW, 3); }
+    y += 26;
+    row('Боқимонда', `${nf(R.left)} ${cur_}`, 40, 700, R.closed ? C.green : R.late ? C.red : C.ink);
+    y += 16;
+
+    /* ---- огоҳӣ дар бораи мӯҳлат ---- */
+    const dDue = R.due ? daysTo(R.due) : null;
+    const notice = R.closed ? ['Қарз пурра пардохт шудааст. Ташаккур!', C.green, C.greenBg]
+        : R.late ? [`Мӯҳлати пардохт гузаштааст. Лутфан, қарзро ҳарчи зудтар пардохт кунед.`, C.red, C.redBg]
+            : R.due ? [`Лутфан, қарзро то ${dateLong(R.due)} пардохт кунед${dDue > 0 ? ` (боз\u00a0${dDue}\u00a0рӯз)` : dDue === 0 ? ' (имрӯз)' : ''}.`, C.amber, C.amberBg] : null;
+    if (notice) {
+        const nl = wrap(notice[0], CW - 60, 27, 600), nh = nl.length * 40 + 44;
+        box(X - 28, y, CW + 56, nh, 24, notice[2]);
+        let ny = y + 50;
+        for (const l of nl) { T(l, X + 2, ny, 27, 600, notice[1]); ny += 40; }
+        y += nh + 50;
+    }
+
+    /* ---- поён ---- */
+    dash(y); y += 70;
+    T('Ташаккур барои эътимоди шумо!', W / 2, y, 30, 700, C.ink, 'center'); y += 46;
+    T(`${S.cfg.company_name || 'DELUS'} · ${dateLong(today())}, ${nowStr().slice(11, 16)}`, W / 2, y, 23, 500, C.ink3, 'center'); y += 36;
+    T('Ин ҳуҷҷат бо барномаи DELUS сохта шудааст', W / 2, y, 21, 400, '#a3abbd', 'center');
+    y += 60;
+    return y + M + 18;
+}
+
+async function receiptBlob(c) {
+    await receiptFonts();
+    const R = receiptData(c);
+    const probe = document.createElement('canvas').getContext('2d');
+    const H = Math.min(9000, Math.ceil(receiptPaint(probe, R, null)));
+    const cv = document.createElement('canvas');
+    cv.width = 1080; cv.height = H;
+    receiptPaint(cv.getContext('2d'), R, H);
+    const blob = await new Promise((res, rej) => cv.toBlob(b => b ? res(b) : rej(known('Чек сохта нашуд. Боз кӯшиш кунед.')), 'image/png'));
+    return { blob, R };
+}
+
+function debtReceipt(key) {
+    const c = custBy(key);
+    if (!c) return toast('Мизоҷ ёфт нашуд.', 'err');
+    const m = Modal.open({
+        title: 'Чеки қарз', sub: c.name, icon: 'receipt', tone: 'tone-buy',
+        body: `<div class="rcpt-prev" data-prev><div class="rcpt-wait"><span class="lb-spin"></span>Чек омода мешавад…</div></div>
+            <p class="rcpt-hint">${isIOS() ? 'Барои гузоштан ба Галерея: «Фиристодан» → «Сохранить изображение» (Save Image).' : 'Чекро ҳамчун акс ба мизоҷ фиристед ё дар телефон нигоҳ доред.'}</p>`,
+        foot: `<button type="button" class="btn lg" data-dl disabled>${ic('download', 17)}Боргирӣ</button>
+            <button type="button" class="btn primary lg" data-share disabled>${ic('share', 17)}Фиристодан</button>`
+    });
+    let file = null, url = '';
+    const name = `DELUS-qarz-${receiptData(c).no.replace(/\D/g, '')}-${today()}.png`;
+    const download = (quiet = false) => {
+        const a = document.createElement('a');
+        a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
+        if (!quiet) toast('Чек ҳамчун акс боргирӣ шуд');
+    };
+    $('[data-dl]', m.el).onclick = () => download();
+    /* share бояд фавран дар ҳамон пахши тугма даъват шавад (iPhone дигар иҷозат намедиҳад), бинобар ин акс пешакӣ тайёр аст */
+    $('[data-share]', m.el).onclick = () => {
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            navigator.share({ files: [file], title: `Чеки қарз — ${c.name}` }).catch(e => {
+                if (e && e.name === 'AbortError') return;
+                download();
+            });
+        } else {
+            download(true);
+            toast('Дар ин дастгоҳ фиристодан дастрас нест — чек ҳамчун акс боргирӣ шуд.');
+        }
+    };
+    const prevOnClose = m.onClose;
+    m.onClose = () => { if (url) setTimeout(() => URL.revokeObjectURL(url), 60000); if (prevOnClose) prevOnClose(); };
+    receiptBlob(c).then(({ blob }) => {
+        if (!m.el.isConnected) return;
+        file = new File([blob], name, { type: 'image/png' });
+        url = URL.createObjectURL(blob);
+        $('[data-prev]', m.el).innerHTML = `<img src="${url}" alt="Чеки қарз — ${esc(c.name)}">`;
+        $$('[data-dl], [data-share]', m.el).forEach(b => { b.disabled = false; });
+    }).catch(e => {
+        $('[data-prev]', m.el).innerHTML = `<div class="rcpt-wait">${esc(errText(e))}</div>`;
+        if (!e.known) console.error(e);
+    });
+    return m;
 }
 
 /* ==================================================================
