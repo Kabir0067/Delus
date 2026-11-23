@@ -209,7 +209,30 @@ function inTurn(fn) {
 /* ---------- рақами нав (id): танҳо сервер медиҳад ----------
    Ҳар дастгоҳ рақамро аз сервер мегирад. Дархостҳо навбат ба навбат иҷро мешаванд ва сервер рақамҳои додашударо дар хотир дорад,
    бинобар ин ду дастгоҳ ҳеҷ гоҳ як рақам намегиранд, ҳатто агар якбора сабт кунанд. */
-const reserved = {};
+/* Баландтарин рақами додашуда дар файл нигоҳ дошта мешавад: рақами моли ё амалиёти нестшуда
+   ҳатто пас аз бозоғозии сервер дубора дода намешавад (масалан, чеки нав рақами чеки кӯҳнаро, ки қарз ба он пайваст аст, намегирад). */
+const IDS_FILE = path.join(DATA_DIR, 'ids.json');
+const reserved = (() => { try { return JSON.parse(fs.readFileSync(IDS_FILE, 'utf8')) || {}; } catch (e) { return {}; } })();
+const saveReserved = () => {
+    try { fs.writeFileSync(IDS_FILE + '.tmp', JSON.stringify(reserved)); fs.renameSync(IDS_FILE + '.tmp', IDS_FILE); }
+    catch (e) { log('ids', e.message); }
+};
+/* Бори аввал барои ҳар варақ: баландтарин рақам дар нусхаҳои эҳтиётӣ (30 рӯзи охир), то рақами пештар нестшуда ҳам такрор нашавад */
+function backupMax(sheet) {
+    let max = 0;
+    try {
+        const dir = path.join(DATA_DIR, 'backups');
+        for (const f of fs.readdirSync(dir).filter(x => /^sheet-.*\.json\.gz$/.test(x))) {
+            const j = JSON.parse(zlib.gunzipSync(fs.readFileSync(path.join(dir, f))).toString('utf8'));
+            for (const vr of j.valueRanges || []) {
+                const name = String(vr.range).split('!')[0].replace(/^'|'$/g, '');
+                if (name === sheet) max = Math.max(max, ...(vr.values || []).slice(1).map(r => parseInt(r[0], 10) || 0));
+                if (sheet === 'Products' && name === 'Transactions') max = Math.max(max, ...(vr.values || []).slice(1).map(r => parseInt(r[4], 10) || 0));
+            }
+        }
+    } catch (e) { }
+    return max;
+}
 async function colMax(range) {
     const r = await google('/values/' + encodeURIComponent(range) + '?valueRenderOption=UNFORMATTED_VALUE');
     if (r.status !== 200) throw new Error('read ' + range + ' ' + r.status);
@@ -220,8 +243,10 @@ function reserveIds(sheet, n) {
         let max = await colMax(`${sheet}!A:A`);
         // рақами мол аз рақамҳои мол дар амалиётҳо ҳам калонтар бошад
         if (sheet === 'Products') max = Math.max(max, await colMax('Transactions!E:E'));
+        if (reserved[sheet] === undefined) reserved[sheet] = backupMax(sheet);
         const first = Math.max(reserved[sheet] || 0, max) + 1;
         reserved[sheet] = first + n - 1;
+        saveReserved();
         return first;
     });
 }
