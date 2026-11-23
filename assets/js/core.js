@@ -267,7 +267,7 @@ const S = {
     products: [], locations: [], tx: [], txSorted: [], exp: [], debts: [], pays: [],
     rep: { tab: 'all', k: 'month', from: '', to: '', loc: '', cat: '', q: '', ecat: '' }, homeK: 'today', fOpen: false, csv: null,
     heads: {}, cfg: { low_stock_default: 10, company_name: 'DELUS', currency: 'сомонӣ' },
-    page: 'home', period: 'today', f: {}, limit: PAGE_SIZE,
+    page: 'home', period: 'today', f: {}, limit: PAGE_SIZE, sel: new Set(), selOn: false,
     seq: 0, sig: '', syncedAt: 0, offline: false, schema: []
 };
 const I = { prod: new Map(), loc: new Map(), stock: new Map(), total: new Map(), debt: new Map(), cust: new Map() };
@@ -507,17 +507,34 @@ async function updateProduct(p, changes) {
     wrote();
 }
 
-async function deleteProduct(p) {
-    const [pr, tr, im] = await Promise.all([
-        DB.locate('Products', 'id', p.id),
-        DB.locate('Transactions', 'product_id', p.id),
-        DB.locate('Images', 'product_id', p.id)
-    ]);
-    await DB.deleteRows({ Transactions: tr, Images: im, Products: pr });
-    S.products = S.products.filter(x => String(x.id) !== String(p.id));
-    S.tx = S.tx.filter(t => String(t.product_id) !== String(p.id));
-    IMG.delete(String(p.id));
-    Local.del('img', String(p.id));
+const deleteProduct = p => deleteProducts([p]);
+
+/* Якчанд мол якбора: як хондан ва як дархости нест кардан барои ҳамаашон (на се дархост барои ҳар мол).
+   Ҳамроҳи мол амалиётҳо ва акси он низ нест мешаванд. */
+async function deleteProducts(list) {
+    const ids = new Set(list.map(p => String(p.id)));
+    if (!ids.size) return;
+    const col = (sheet, field) => { const c = colName(head(sheet).indexOf(field)); return `${sheet}!${c}:${c}`; };
+    const [pr, tr, im] = await DB.batchGet([col('Products', 'id'), col('Transactions', 'product_id'), col('Images', 'product_id')]);
+    const rowsOf = rows => rows.map((r, i) => i > 0 && ids.has(String(r[0] ?? '').trim()) ? i + 1 : 0).filter(Boolean);
+    await DB.deleteRows({ Transactions: rowsOf(tr), Images: rowsOf(im), Products: rowsOf(pr) });
+    S.products = S.products.filter(p => !ids.has(String(p.id)));
+    S.tx = S.tx.filter(t => !ids.has(String(t.product_id)));
+    ids.forEach(id => { IMG.delete(id); Local.del('img', id); });
+    wrote();
+}
+
+/* Ба бойгонӣ гузоштан ё баргардонидани якчанд мол: як хондан ва як сабт */
+async function setProductsStatus(list, status) {
+    const ids = new Set(list.map(p => String(p.id)));
+    if (!ids.size) return;
+    const h = head('Products'), c = colName(h.indexOf('id')), sc = colName(h.indexOf('status'));
+    const rows = await DB.get(`Products!${c}:${c}`);
+    const data = [];
+    rows.forEach((r, i) => { if (i > 0 && ids.has(String(r[0] ?? '').trim())) data.push({ range: `Products!${sc}${i + 1}`, values: [[status]] }); });
+    if (!data.length) throw known('Ин молҳо дар ҷадвал ёфт нашуданд. Навсозӣ кунед.');
+    await DB.setRanges(data);
+    S.products.forEach(p => { if (ids.has(String(p.id))) p.status = status; });
     wrote();
 }
 

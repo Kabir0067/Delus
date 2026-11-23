@@ -4,79 +4,78 @@
 /* ==================================================================
    ҶУСТУҶӮИ МОЛ ДАР ТИРЕЗАҲО
    ================================================================== */
-function matchProducts(q) {
+function matchProducts(q, limit = 8) {
     const n = norm(q);
     if (!n) return [];
     return activeProds()
         .filter(p => hasAll(`${p.name} ${p.product_code} ${p.category} ${p.description}`, q))
         .sort((a, b) => (norm(a.name).startsWith(n) ? 0 : 1) - (norm(b.name).startsWith(n) ? 0 : 1) || String(a.name).localeCompare(String(b.name), 'ru'))
-        .slice(0, 8);
+        .slice(0, limit);
 }
 
-/* Молҳои бештар истифодашуда барои интихоб бо як ламс */
-function quickProducts() {
+/* Молҳои бештар истифодашуда — аввал */
+function quickProducts(limit = 10) {
     const n = new Map();
     S.tx.forEach(x => { const k = String(x.product_id); n.set(k, (n.get(k) || 0) + 1); });
-    return [...activeProds()].sort((a, b) => (n.get(String(b.id)) || 0) - (n.get(String(a.id)) || 0)).slice(0, 10);
+    return [...activeProds()].sort((a, b) => (n.get(String(b.id)) || 0) - (n.get(String(a.id)) || 0) || String(a.name).localeCompare(String(b.name), 'ru')).slice(0, limit);
 }
 
-/* quickWhen: аксҳои пешниҳод танҳо вақте намоёнанд, ки ин функсия true диҳад (масалан, ҳанӯз мол интихоб нашудааст) */
-function mountPicker(root, { onPick, onNew, stockAt, quick = false, quickWhen = () => true }) {
+/* Каталоги мол дар тиреза: ҷустуҷӯ ва аксҳои мол, ҳамеша дар пеши чашм.
+   Бе ҷустуҷӯ — молҳои бештар истифодашуда, бо ҷустуҷӯ — натиҷаҳо.
+   Пахш кардани акс молро илова мекунад; badge(p) рақами болои аксро медиҳад («×2» — чанд адад дар сабад). */
+function mountPicker(root, { onPick, onNew, stockAt, price, badge, max = 12 }) {
     root.innerHTML = `<div class="pick"><div class="search">${ic('search', 17)}
         <input type="search" data-auto placeholder="Ном ё рамзи молро нависед" autocomplete="off" enterkeyhint="search" aria-label="Ҷустуҷӯи мол"></div>
-        <div class="pick-list" hidden></div>
-        ${quick ? `<div class="pick-q">${quickProducts().map(p => `<button type="button" class="pq" data-q="${esc(p.id)}">${thumb(p)}<span>${esc(p.name)}</span></button>`).join('')}</div>` : ''}</div>`;
-    const inp = $('input', root), list = $('.pick-list', root), pq = $('.pick-q', root);
-    if (pq) pq.addEventListener('click', e => { const b = e.target.closest('[data-q]'); if (b) onPick(prodBy(b.dataset.q)); });
+        <div class="pick-grid"></div><p class="pick-more" hidden></p></div>`;
+    const inp = $('input', root), grid = $('.pick-grid', root), more = $('.pick-more', root);
     let items = [], hot = 0;
-    root.refreshQuick = () => { if (pq) pq.hidden = !!inp.value.trim() || !quickWhen(); };
 
+    function tile(it, i, q) {
+        const h = q && i === hot ? 'hot' : '';
+        if (it.isNew) return `<button type="button" class="pick-i new ${h}" data-i="${i}">
+            <span class="thumb">${ic('plus', 22)}</span><span class="pt-n">Моли нав: «${esc(it.q)}»</span><span class="pt-m"><small>Ба рӯйхат илова мешавад</small></span></button>`;
+        const p = it.p, have = stockAt ? qtyAt(p.id, stockAt()) : qtyAll(p.id), b = badge ? badge(p) : '';
+        return `<button type="button" class="pick-i ${b ? 'in' : ''} ${h}" data-i="${i}" title="${esc(p.name)}">
+            ${thumb(p)}${b ? `<span class="pt-c">${esc(b)}</span>` : ''}
+            <span class="pt-n">${esc(p.name)}</span>
+            <span class="pt-m"><b>${price ? fmt(price(p), 2) : ''}</b><small class="${have <= 0 ? 'neg' : ''}">${qty(have)} ${esc(unitOf(p))}</small></span></button>`;
+    }
     function draw() {
         const q = inp.value.trim();
-        if (pq) pq.hidden = !!q || !quickWhen();
-        if (!q) { list.hidden = true; list.innerHTML = ''; items = []; return; }
-        const found = matchProducts(q);
+        const found = q ? matchProducts(q, 30) : quickProducts(max);
         items = found.map(p => ({ p }));
-        const exact = found.some(p => norm(p.name) === norm(q));
-        if (onNew && !exact) items.push({ isNew: true });
+        if (onNew && q && !found.some(p => norm(p.name) === norm(q))) items.unshift({ isNew: true, q });
         hot = Math.min(hot, Math.max(items.length - 1, 0));
-        list.innerHTML = items.map((it, i) => it.isNew
-            ? `<button type="button" class="pick-i ${i === hot ? 'hot' : ''}" data-i="${i}"><span class="thumb sm">${ic('plus', 16)}</span><span class="mini-b"><b>Моли нав: «${esc(q)}»</b><small>Дар рӯйхат илова мешавад</small></span></button>`
-            : (() => {
-                const p = it.p, have = stockAt ? qtyAt(p.id, stockAt()) : qtyAll(p.id);
-                return `<button type="button" class="pick-i ${i === hot ? 'hot' : ''}" data-i="${i}">${thumb(p, 'sm')}
-                    <span class="mini-b"><b>${esc(p.name)}</b><small>${esc(p.product_code || '')}</small></span>
-                    <span class="mini-v ${have <= 0 ? 'neg' : ''}">${qty(have)} <small>${esc(unitOf(p))}</small></span></button>`;
-            })()).join('') || '<div class="pick-none">Чунин мол нест.</div>';
-        list.hidden = false;
+        grid.innerHTML = items.map((it, i) => tile(it, i, q)).join('') || '<div class="pick-none">Чунин мол нест. Номро дигар хел нависед.</div>';
+        const all = activeProds().length;
+        more.hidden = !!q || all <= found.length;
+        more.textContent = `Боз ${fmt(all - found.length)} мол ҳаст — барои ёфтан номашро нависед.`;
     }
     function choose(i) {
         const it = items[i];
         if (!it) return;
         const q = inp.value.trim();
-        inp.value = '';
-        hot = 0;
+        if (q) { inp.value = ''; hot = 0; }
+        if (it.isNew) onNew(it.q); else onPick(it.p);
         draw();
-        if (it.isNew) onNew(q); else onPick(it.p);
-        if (matchMedia('(hover: hover)').matches) inp.focus();
+        if (q && matchMedia('(hover: hover)').matches) inp.focus();
     }
     inp.addEventListener('input', () => { hot = 0; draw(); });
     inp.addEventListener('keydown', e => {
-        if (e.key === 'Enter') { e.preventDefault(); choose(hot); }
-        else if (e.key === 'ArrowDown' && items.length) { e.preventDefault(); hot = (hot + 1) % items.length; draw(); }
-        else if (e.key === 'ArrowUp' && items.length) { e.preventDefault(); hot = (hot - 1 + items.length) % items.length; draw(); }
+        if (e.key === 'Enter') { e.preventDefault(); if (inp.value.trim()) choose(hot); }
+        else if (e.key === 'ArrowDown' && items.length && inp.value.trim()) { e.preventDefault(); hot = (hot + 1) % items.length; draw(); }
+        else if (e.key === 'ArrowUp' && items.length && inp.value.trim()) { e.preventDefault(); hot = (hot - 1 + items.length) % items.length; draw(); }
     });
-    list.addEventListener('click', e => {
-        const b = e.target.closest('[data-i]');
-        if (b) choose(+b.dataset.i);
-    });
+    grid.addEventListener('click', e => { const b = e.target.closest('[data-i]'); if (b) choose(+b.dataset.i); });
+    root.refresh = draw;
+    draw();
 }
 
 /* ==================================================================
    ФУРӮШ, ВОРИДОТ, ИНТИҚОЛ — як тирезаи умумӣ
    ================================================================== */
 const DOCS = {
-    sale: { title: 'Фурӯш', sub: 'Мол илова кунед, нарх ва миқдорро санҷед', icon: 'sale', tone: 'tone-sale' },
+    sale: { title: 'Фурӯш', sub: 'Молҳоро пахш кунед — ба сабад илова мешаванд', icon: 'sale', tone: 'tone-sale' },
     buy: { title: 'Воридот', sub: 'Моли омада ба анбор', icon: 'in', tone: 'tone-buy' },
     move: { title: 'Интиқол', sub: 'Мол аз як ҷой ба ҷойи дигар', icon: 'move', tone: 'tone-move' }
 };
@@ -121,19 +120,25 @@ function docModal(kind, preset = null) {
             : `<div class="grid2 route">${field('Аз куҷо', `<select name="from">${locOptions(wh.id)}</select>`)}${field('Ба куҷо', `<select name="to">${locOptions(toDefault.id)}</select>`)}</div>`;
 
     const m = formModal({
-        title: DOCS[kind].title, sub: DOCS[kind].sub, icon: DOCS[kind].icon, tone: DOCS[kind].tone, size: 'lg', footClass: 'wrap',
+        title: DOCS[kind].title, sub: DOCS[kind].sub, icon: DOCS[kind].icon, tone: DOCS[kind].tone, size: 'xl', footClass: 'wrap',
         submitClass: kind === 'sale' ? 'sale-solid' : 'primary',
         footExtra: '<div class="total"><span data-count></span><span><b data-total></b><small data-extra></small></span></div>',
-        body: `${locHtml}
-            <div class="field"><span class="field-l">Мол</span><div data-pick></div></div>
-            <div class="lines" data-lines></div>
-            ${payHtml}
-            <details class="extra"><summary>${ic('right', 14)}Сана ва эзоҳ</summary>${dateF}
-            ${field('Эзоҳ <em>(ихтиёрӣ)</em>', `<input type="text" name="note" maxlength="200" placeholder="${kind === 'sale' ? 'Номи мизоҷ ё рақами телефон' : 'Масалан: мошини 80-AA-123'}">`)}</details>`,
+        body: `<div class="doc">
+            <div class="doc-l">${locHtml}
+                <div class="field"><span class="field-l">Молҳо <em>(${kind === 'buy' ? 'пахш кунед ё номи моли навро нависед' : 'ҳар пахш — як адад'})</em></span><div data-pick></div></div>
+            </div>
+            <div class="doc-r">
+                <div class="doc-cart-h"><span>${ic(kind === 'move' ? 'move' : 'sale', 16)}${kind === 'sale' ? 'Сабад' : kind === 'buy' ? 'Моли омада' : 'Барои интиқол'}</span><small data-count2></small></div>
+                <div class="lines" data-lines></div>
+                ${payHtml}
+                <details class="extra"><summary>${ic('right', 14)}Сана ва эзоҳ</summary>${dateF}
+                ${field('Эзоҳ <em>(ихтиёрӣ)</em>', `<input type="text" name="note" maxlength="200" placeholder="${kind === 'sale' ? 'Номи мизоҷ ё рақами телефон' : 'Масалан: мошини 80-AA-123'}">`)}</details>
+            </div>
+        </div>`,
         onSubmit: data => saveDoc(kind, lines, data)
     });
 
-    const box = $('[data-lines]', m.el);
+    const box = $('[data-lines]', m.el), pick = $('[data-pick]', m.el);
     const sel = n => $(`[name=${n}]`, m.el);
     if (kind === 'sale') {
         const seg = $('.pay-seg', m.el), dbox = $('[data-debt-box]', m.el);
@@ -185,6 +190,8 @@ function docModal(kind, preset = null) {
         });
         const n = lines.length;
         $('[data-count]', m.el).textContent = n ? `${fmt(n)} мол` : 'Ҳоло мол нест';
+        $('[data-count2]', m.el).textContent = n ? `${fmt(n)} мол` : '';
+        if (pick.refresh) pick.refresh();
         const total = $('[data-total]', m.el), extra = $('[data-extra]', m.el);
         if (kind === 'sale') {
             const sum = lines.reduce((s, l) => s + lineSum(l), 0);
@@ -211,19 +218,17 @@ function docModal(kind, preset = null) {
             ...(have > 0 ? [`<button type="button" class="qchip" data-set="${have}">Ҳама (${qty(have)})</button>`] : []), ...add].join('');
     }
     function drawLines() {
-        const pr = $('[data-pick]', m.el);
-        if (pr && pr.refreshQuick) pr.refreshQuick();
         if (!lines.length) {
-            box.innerHTML = `<div class="lines-empty">${ic('tag', 20)}<span>Молро интихоб кунед. Миқдор ва нарх дар ин ҷо пайдо мешаванд.</span></div>`;
+            box.innerHTML = `<div class="lines-empty">${ic('tag', 20)}<span>${kind === 'sale' ? 'Сабад холӣ аст. Молро аз рӯйхат пахш кунед — ҳар пахш як адад илова мекунад.' : 'Молро аз рӯйхат пахш кунед. Миқдор ва нарх дар ин ҷо пайдо мешаванд.'}</span></div>`;
             drawTotals();
             return;
         }
         box.innerHTML = lines.map((l, i) => {
             const u = esc(unitOf(l.p));
             return `<div class="line" data-i="${i}">
-                <div class="line-h">${thumb(l.p)}
-                    <span class="mini-b"><b>${esc(l.p.name)}</b><small>Дар ин ҷо: ${qty(qtyAt(l.p.id, srcLoc()))} ${u}</small></span>
-                    <button type="button" class="line-x" data-rm aria-label="Хориҷ кардан">${ic('x', 16)}</button></div>
+                <div class="line-h">${thumb(l.p, 'sm')}
+                    <span class="mini-b"><b>${esc(l.p.name)}</b><span class="line-c" data-c></span></span>
+                    <button type="button" class="line-x" data-rm aria-label="Аз сабад хориҷ кардан">${ic('x', 16)}</button></div>
                 <div class="line-f">
                     <div class="line-q"><span class="field-l">Миқдор (${u})</span>
                         <div class="qty"><button type="button" data-step="-1" aria-label="Кам кардан">${ic('minus', 15)}</button>
@@ -233,18 +238,19 @@ function docModal(kind, preset = null) {
                     ${kind === 'buy' ? field(`Нархи хариди 1 ${u}`, `<input type="text" inputmode="decimal" data-v="cost" value="${esc(l.cost)}">`) + field(`Нархи фурӯши 1 ${u}`, `<input type="text" inputmode="decimal" data-v="price" value="${esc(l.price)}">`) : ''}
                     ${kind === 'move' ? '' : '<span class="line-t" data-t></span>'}
                 </div>
-                <div class="qchips">${quickChips(l)}</div>
-                <div class="line-c" data-c></div>
+                ${kind === 'sale' ? '' : `<div class="qchips">${quickChips(l)}</div>`}
                 <div class="line-w" data-w hidden></div>
             </div>`;
         }).join('');
         drawTotals();
     }
     function addLine(p) {
-        const found = lines.find(l => String(l.p.id) === String(p.id));
-        if (found) found.q = round3(num(found.q) + 1);
-        else lines.push({ p, q: 1, price: num(p.sale_price) || '', cost: num(p.purchase_price) || '' });
+        let i = lines.findIndex(l => String(l.p.id) === String(p.id));
+        if (i >= 0) lines[i].q = round3(num(lines[i].q) + 1);
+        else { lines.push({ p, q: 1, price: num(p.sale_price) || '', cost: num(p.purchase_price) || '' }); i = lines.length - 1; }
         drawLines();
+        const row = box.children[i];
+        if (row) { row.classList.remove('flash'); void row.offsetWidth; row.classList.add('flash'); }
     }
 
     box.addEventListener('focusin', e => { if (e.target.dataset.v) e.target.select(); });
@@ -269,10 +275,10 @@ function docModal(kind, preset = null) {
     });
     ['loc', 'from', 'to'].forEach(n => { const s = sel(n); if (s) s.addEventListener('change', drawLines); });
 
-    mountPicker($('[data-pick]', m.el), {
+    mountPicker(pick, {
         stockAt: srcLoc,
-        quick: true,
-        quickWhen: () => !lines.length,
+        price: kind === 'move' ? null : p => kind === 'buy' ? num(p.purchase_price) : num(p.sale_price),
+        badge: p => { const l = lines.find(x => String(x.p.id) === String(p.id)); return l ? '×' + qty(num(l.q)) : ''; },
         onPick: addLine,
         onNew: kind === 'buy' ? name => productForm(null, { name, noOpening: true, onSaved: addLine }) : null
     });
@@ -410,8 +416,13 @@ function fixModal(preset = null, locId = '') {
         cur_.hidden = !prod;
         if (prod) cur_.textContent = `${prod.name}: дар система ${qty(qtyAt(prod.id, loc.value))} ${unitOf(prod)}`;
     };
-    loc.addEventListener('change', draw);
-    mountPicker($('[data-pick]', m.el), { stockAt: () => loc.value, onPick: p => { prod = p; draw(); $('[name=real]', m.el).focus(); } });
+    const pk = $('[data-pick]', m.el);
+    loc.addEventListener('change', () => { draw(); if (pk.refresh) pk.refresh(); });
+    mountPicker(pk, {
+        stockAt: () => loc.value,
+        badge: p => prod && String(prod.id) === String(p.id) ? '✓' : '',
+        onPick: p => { prod = p; draw(); $('[name=real]', m.el).focus(); }
+    });
     draw();
 }
 
@@ -425,9 +436,11 @@ function productView(id) {
     const hist = S.txSorted.filter(x => String(x.product_id) === String(p.id));
     const profit = num(p.sale_price) - num(p.purchase_price);
     const specs = [['Силсила', p.series], ['Ранг', p.color], ['Шумораи ҷойҳо', p.mesta], ['Шумораи тугмаҳо', p.taga], ['Дар як қуттӣ', p.units_per_box]].filter(([, v]) => v !== '' && v !== undefined);
-    Modal.open({
+    /* акс шояд ҳанӯз бор нашуда бошад: ҷояш тайёр аст, акс пас аз омадан худаш пайдо мешавад ва калон мешавад */
+    const hasPhoto = !!imgSrc(p) || String(p.image_url || '').startsWith('img:');
+    const m = Modal.open({
         title: 'Маълумоти мол', icon: 'tag', tone: 'tone-buy',
-        body: `<div class="pv-photo ${imgSrc(p) ? '' : 'none'}">${thumb(p, 'cover')}${imgSrc(p) ? '' : `<button class="btn sm pv-add" data-act="prodEdit" data-id="${esc(p.id)}">${ic('camera', 15)}Акс гузоштан</button>`}</div>
+        body: `<div class="pv-photo ${hasPhoto ? '' : 'none'}">${hasPhoto ? `<button type="button" class="pv-zoom" data-zoom aria-label="Аксро калон кардан">${thumb(p, 'cover')}<span class="pv-zoom-i">${ic('search', 15)}Калон кардан</span></button>` : `${thumb(p, 'cover')}<button class="btn sm pv-add" data-act="prodEdit" data-id="${esc(p.id)}">${ic('camera', 15)}Акс гузоштан</button>`}</div>
         <div class="pv-head"><b>${esc(p.name)}</b><small>${esc([p.product_code, p.category].filter(Boolean).join(' · '))}</small></div>
         <div class="facts">
             <div><small>Дар анбор</small><b>${qty(qtyAll(p.id))} ${esc(unitOf(p))}</b></div>
@@ -448,8 +461,123 @@ function productView(id) {
             <span class="tile sm ${esc(x.type)}">${ic((TYPES[x.type] || TYPES.ADJUSTMENT).icon, 15)}</span>
             <span class="mini-b"><b>${(TYPES[x.type] || { t: x.type }).t}</b><small>${esc(dayLabel(dayOf(x)))} · ${esc(txRoute(x))}</small></span>
             <span class="mini-v">${txQty(x, p)}<small>${money(txValue(x))}</small></span></button>`).join('')}` : ''}`,
-        foot: `<button class="btn primary lg" data-act="prodEdit" data-id="${esc(p.id)}">${ic('edit', 16)}Тағйир додан</button>`
+        foot: `<button type="button" class="btn danger lg" data-del>${ic('trash', 16)}Нест кардан</button>
+            <button class="btn primary lg" data-act="prodEdit" data-id="${esc(p.id)}">${ic('edit', 16)}Тағйир додан</button>`
     });
+    const z = $('[data-zoom]', m.el);
+    if (z) z.onclick = () => { if (imgSrc(p)) photoZoom(imgSrc(p), p.name); else toast('Акс ҳоло бор мешавад…'); };
+    $('[data-del]', m.el).onclick = () => removeProducts([p], () => m.close());
+}
+
+/* Акси калон: пахш — калон мешавад (боз пахш — бармегардад), бо ду ангушт ё чархаки муш — калон/хурд, кашидан — ҳаракат */
+function photoZoom(src, title = '') {
+    if (!src) return;
+    const m = Modal.open({
+        title: title || 'Акс', sub: 'Пахш кунед — калон мешавад. Бо ду ангушт ҳам калон кардан мумкин аст.', size: 'zoom',
+        body: `<div class="zoom" data-z><img src="${esc(src)}" alt="${esc(title)}" draggable="false"></div>`
+    });
+    const box = $('[data-z]', m.el), img = $('img', box);
+    let s = 1, x = 0, y = 0;
+    const apply = () => { img.style.transform = `translate(${x}px, ${y}px) scale(${s})`; box.classList.toggle('on', s > 1.01); };
+    const clamp = () => {
+        const r = box.getBoundingClientRect(), mx = r.width * (s - 1) / 2, my = r.height * (s - 1) / 2;
+        x = Math.max(-mx, Math.min(mx, x)); y = Math.max(-my, Math.min(my, y));
+    };
+    const zoomTo = (ns, cx, cy) => {
+        ns = Math.max(1, Math.min(5, ns));
+        const r = box.getBoundingClientRect(), ox = cx - r.left - r.width / 2, oy = cy - r.top - r.height / 2;
+        x = ox - (ox - x) * ns / s; y = oy - (oy - y) * ns / s; s = ns;
+        if (s <= 1.01) { s = 1; x = 0; y = 0; }
+        clamp(); apply();
+    };
+    const pts = new Map();
+    let base = null, moved = false;
+    const snap = () => {
+        const v = [...pts.values()];
+        return v.length >= 2
+            ? { d: Math.hypot(v[0].x - v[1].x, v[0].y - v[1].y), cx: (v[0].x + v[1].x) / 2, cy: (v[0].y + v[1].y) / 2, s, x, y }
+            : { px: v[0].x, py: v[0].y, s, x, y };
+    };
+    box.addEventListener('pointerdown', e => {
+        box.setPointerCapture(e.pointerId);
+        pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        base = snap(); moved = false;
+        box.classList.add('drag');
+    });
+    box.addEventListener('pointermove', e => {
+        if (!pts.has(e.pointerId)) return;
+        pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        const now = snap();
+        if (base.d && now.d) {
+            moved = true;
+            s = base.s; x = base.x; y = base.y;
+            zoomTo(base.s * now.d / base.d, now.cx, now.cy);
+        } else if (!base.d && s > 1) {
+            const dx = now.px - base.px, dy = now.py - base.py;
+            if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
+            x = base.x + dx; y = base.y + dy; clamp(); apply();
+        } else if (!base.d && Math.abs(now.px - base.px) + Math.abs(now.py - base.py) > 6) moved = true;
+    });
+    const up = e => {
+        if (!pts.has(e.pointerId)) return;
+        const single = pts.size === 1;
+        pts.delete(e.pointerId);
+        if (pts.size) { base = snap(); return; }
+        box.classList.remove('drag');
+        if (single && !moved && e.type === 'pointerup') { if (s > 1) zoomTo(1, e.clientX, e.clientY); else zoomTo(2.5, e.clientX, e.clientY); }
+    };
+    box.addEventListener('pointerup', up);
+    box.addEventListener('pointercancel', up);
+    box.addEventListener('wheel', e => { e.preventDefault(); zoomTo(s * (e.deltaY < 0 ? 1.25 : 0.8), e.clientX, e.clientY); }, { passive: false });
+    return m;
+}
+
+/* Нест кардани як ё якчанд мол.
+   Агар мол таърих (фурӯш, воридот) дошта бошад, аввал бойгонӣ пешниҳод мешавад: мол пинҳон мешавад, вале ҳисобот вайрон намешавад. */
+async function removeProducts(list, after) {
+    if (!list.length) return false;
+    const ids = new Set(list.map(p => String(p.id)));
+    const nTx = S.tx.filter(t => ids.has(String(t.product_id))).length;
+    const one = list.length === 1;
+    const what = one ? `«${list[0].name}»` : `${fmt(list.length)} мол`;
+    const title = one ? 'Нест кардани мол' : `Нест кардани ${fmt(list.length)} мол`;
+    const canArchive = list.some(isActive);
+    let pick;
+    if (!nTx) {
+        pick = await ask({ title, text: `${what} аз ҷадвал нест мешавад. ${one ? 'Ин мол' : 'Ин молҳо'} ҳанӯз ягон амалиёт надорад, бинобар ин ҳисобот тағйир намеёбад.`, ok: 'Нест кардан', danger: true }) ? 'delete' : null;
+    } else {
+        pick = await choose({
+            title,
+            text: `${what} ${fmt(nTx)} амалиёт (фурӯш, воридот, интиқол) дорад. Агар пурра нест кунед, ин амалиётҳо ҳам нест мешаванд ва ҳисоботи гузашта иваз мешавад.${canArchive ? ' Беҳтар аст ба бойгонӣ гузоред: мол аз рӯйхат пинҳон мешавад, вале таърих мемонад.' : ''}`,
+            options: [...(canArchive ? [['archive', 'Ба бойгонӣ гузоштан (тавсия)', 'primary']] : []), ['delete', 'Пурра нест кардан', 'danger-solid']]
+        });
+    }
+    if (!pick) return false;
+    try {
+        if (pick === 'archive') {
+            await setProductsStatus(list.filter(isActive), 'INACTIVE');
+            toast(one ? 'Мол ба бойгонӣ гузошта шуд' : `${fmt(list.length)} мол ба бойгонӣ гузошта шуд`);
+        } else {
+            await deleteProducts(list);
+            toast(one ? 'Мол нест карда шуд' : `${fmt(list.length)} мол нест карда шуд`);
+        }
+    } catch (e) { showErr(e); return false; }
+    if (after) after(pick);
+    return true;
+}
+
+/* Амал бо молҳои интихобшуда дар саҳифаи «Молҳо» */
+async function selRun(what) {
+    const list = [...S.sel].map(prodBy).filter(Boolean);
+    if (!list.length) return toast('Аввал молро интихоб кунед.', 'err');
+    const done = () => { S.selOn = false; S.sel.clear(); renderPage(); };
+    if (what === 'delete') { if (await removeProducts(list)) done(); return; }
+    try {
+        const status = what === 'restore' ? 'ACTIVE' : 'INACTIVE';
+        await setProductsStatus(list, status);
+        toast(status === 'ACTIVE' ? `${fmt(list.length)} мол аз бойгонӣ баргардонида шуд` : `${fmt(list.length)} мол ба бойгонӣ гузошта шуд`);
+        done();
+    } catch (e) { showErr(e); }
 }
 
 function productForm(p = null, { name = '', noOpening = false, onSaved } = {}) {
@@ -599,6 +727,7 @@ function productForm(p = null, { name = '', noOpening = false, onSaved } = {}) {
         };
     });
     rm.onclick = () => { photo = null; removed = true; show(''); };
+    th.addEventListener('click', () => { const src = photo || (removed ? '' : imgSrc(v)); if (src) photoZoom(src, String($('[name=name]', m.el).value || v.name || '')); });
 
     if (editing) {
         $('[data-archive]', m.el).onclick = async () => {
@@ -613,17 +742,7 @@ function productForm(p = null, { name = '', noOpening = false, onSaved } = {}) {
                 m.close();
             } catch (e) { m.fail(errText(e)); }
         };
-        $('[data-delete]', m.el).onclick = async () => {
-            const n = S.tx.filter(t => String(t.product_id) === String(p.id)).length;
-            const yes = await ask({
-                title: 'Нест кардани мол',
-                text: `«${p.name}»${n ? ` ва ${fmt(n)} амалиёти он` : ''} аз ҷадвал нест мешавад. Ин амал бозгашт надорад${n ? ' ва ҳисоботи гузашта иваз мешавад. Агар таърих лозим бошад, беҳтар аст молро ба бойгонӣ гузоред' : ''}.`,
-                ok: 'Нест кардан', danger: true
-            });
-            if (!yes) return;
-            try { await deleteProduct(p); toast('Мол нест карда шуд'); m.close(); }
-            catch (e) { m.fail(errText(e)); }
-        };
+        $('[data-delete]', m.el).onclick = () => removeProducts([p], () => m.close());
     }
 }
 
@@ -896,6 +1015,28 @@ const ACT = {
     debtorView: el => debtorView(el.dataset.id),
     debtPay: el => payForm(custBy(el.dataset.id)),
     debtReceipt: el => debtReceipt(el.dataset.id),
+    selMode() { S.selOn = !S.selOn; S.sel.clear(); renderPage(); },
+    selToggle(el) { const id = el.dataset.id; if (S.sel.has(id)) S.sel.delete(id); else S.sel.add(id); renderBody(); },
+    selAll() {
+        const ids = filterProducts().map(p => String(p.id)), all = ids.length && ids.every(id => S.sel.has(id));
+        ids.forEach(id => { if (all) S.sel.delete(id); else S.sel.add(id); });
+        renderBody();
+    },
+    selCancel() { S.selOn = false; S.sel.clear(); renderPage(); },
+    selArchive: () => selRun('archive'),
+    selRestore: () => selRun('restore'),
+    selDelete: () => selRun('delete'),
+    async xlsx(el) {
+        if (el.classList.contains('busy')) return;
+        const label = $('.set-go', el), was = label ? label.innerHTML : '';
+        el.classList.add('busy');
+        if (label) label.innerHTML = '<span class="lb-spin"></span>Омода мешавад…';
+        try {
+            const out = await exportProductsXlsx();
+            toast(`Excel омода шуд: ${fmt(out.count)} мол${out.images ? `, ${fmt(out.images)} акс` : ''}`);
+        } catch (e) { showErr(e); }
+        finally { el.classList.remove('busy'); if (label) label.innerHTML = was; }
+    },
     navMore: () => moreSheet(),
     expNew: () => expenseForm(),
     expEdit: el => expenseForm(S.exp.find(x => String(x.id) === el.dataset.id)),

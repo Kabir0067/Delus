@@ -339,7 +339,7 @@ const MIME = {
 };
 const COMPRESS = new Set(['.html', '.js', '.css', '.svg', '.webmanifest', '.json', '.txt']);
 const BUNDLE = 'assets/js/app.js';
-const JS_ORDER = ['config', 'core', 'ui', 'pages', 'debts', 'flows'].map(n => `assets/js/${n}.js`);
+const JS_ORDER = ['config', 'core', 'ui', 'pages', 'debts', 'xlsx', 'flows'].map(n => `assets/js/${n}.js`);
 const REF = /(assets\/[\w./-]+)\?v=\w+/g;
 const fileCache = new Map();
 

@@ -234,6 +234,7 @@ function choose({ title, text = '', options }) {
 function go(page, filters = {}, push = true) {
     if (Modal.stack.length) Modal.closeAll();
     const changed = page !== S.page;
+    if (changed) { S.selOn = false; S.sel.clear(); }
     S.page = page;
     S.f = filters;
     S.limit = PAGE_SIZE;

@@ -9,3 +9,5 @@ node_modules/
 code.js
 # версияи насбшуда (hook-и git менависад)
 VERSION
+# натиҷаҳои санҷиш
+tests/out/

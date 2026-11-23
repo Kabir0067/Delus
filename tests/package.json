@@ -1,0 +1,13 @@
+{
+  "name": "delus-tests",
+  "private": true,
+  "type": "module",
+  "description": "Санҷишҳои DELUS: браузер (Puppeteer) бо сервери воқеӣ ва API-и сохта; хондани файли Excel (ExcelJS)",
+  "scripts": {
+    "test": "node ui.test.mjs"
+  },
+  "devDependencies": {
+    "exceljs": "4.4.0",
+    "puppeteer-core": "23.11.1"
+  }
+}

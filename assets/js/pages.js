@@ -443,6 +443,16 @@ function filterProducts() {
     return [...list].sort(sorters[f.sort] || sorters.name);
 }
 
+/* Ҳолати «Интихоб»: корт тамоман тугмаи интихоб мешавад */
+function productCardSel(p) {
+    const on = S.sel.has(String(p.id));
+    return `<button type="button" class="pcard pcard-sel ${on ? 'on' : ''}" data-act="selToggle" data-id="${esc(p.id)}" aria-pressed="${on}">
+        <span class="pcard-img">${thumb(p, 'cover')}<span class="sel-box">${ic('check', 16)}</span>${stockPill(p)}</span>
+        <span class="pcard-b"><span class="pcard-n"><b>${esc(p.name)}</b><small>${esc(p.category || 'Бе гурӯҳ')}</small></span>
+            <span class="pcard-p"><span class="sell">${fmt(p.sale_price, 2)} <small>${esc(cur())}</small></span></span></span>
+    </button>`;
+}
+
 function productCard(p) {
     const id = esc(p.id);
     const on = isActive(p);
@@ -472,6 +482,7 @@ PAGES.prod = {
     head: () => `<div class="toolbar">
         ${searchBox('Ҷустуҷӯи мол')}
         ${filterBtn(+!!S.f.cat)}
+        <button class="btn sel-btn ${S.selOn ? 'on' : ''}" data-act="selMode" aria-pressed="${S.selOn}" title="Якчанд молро интихоб кардан: ба бойгонӣ ё нест кардан">${ic(S.selOn ? 'x' : 'check', 16)}<span>${S.selOn ? 'Бекор' : 'Интихоб'}</span></button>
         <button class="btn primary" data-act="prodNew">${ic('plus', 16)}Моли нав</button>
         <div class="f-more ${S.fOpen ? 'open' : ''}">
             ${catSelect()}
@@ -487,6 +498,19 @@ PAGES.prod = {
             return empty('Ҳоло мол нест', 'Моли аввалро илова кунед.', `<button class="btn primary" data-act="prodNew">${ic('plus', 16)}Моли нав</button>`);
         }
         const shown = list.slice(0, S.limit);
+        if (S.selOn) {
+            const n = S.sel.size, all = list.every(p => S.sel.has(String(p.id))), dis = n ? '' : 'disabled';
+            return `<p class="sel-hint">${ic('check', 15)}Молҳоро пахш кунед, то интихоб шаванд. Баъд амалро дар поён интихоб кунед.</p>
+            <div class="pgrid sel">${shown.map(productCardSel).join('')}</div>${moreBtn(shown.length, list.length)}
+            <div class="selbar" role="toolbar" aria-label="Амал бо молҳои интихобшуда">
+                <span class="selbar-n"><b>${fmt(n)}</b> аз ${fmt(list.length)} интихоб шуд</span>
+                <button type="button" class="btn" data-act="selAll">${all ? 'Ҳеҷ кадом' : 'Ҳама'}</button>
+                ${S.f.status === 'arch'
+                    ? `<button type="button" class="btn t-buy" data-act="selRestore" ${dis}>${ic('back', 15)}<span>Баргардонидан</span></button>`
+                    : `<button type="button" class="btn" data-act="selArchive" ${dis}>${ic('archive', 15)}<span>Ба бойгонӣ</span></button>`}
+                <button type="button" class="btn danger-solid" data-act="selDelete" ${dis}>${ic('trash', 15)}<span>Нест кардан</span></button>
+            </div>`;
+        }
         return `<div class="pgrid">${shown.map(productCard).join('')}</div>${moreBtn(shown.length, list.length)}`;
     }
 };
@@ -635,7 +659,7 @@ PAGES.tx = {
 
 /* ---------- 5. Танзимот ---------- */
 const HELP = [
-    ['Фурӯшро чӣ тавр сабт мекунам?', 'Тугмаи «Фурӯш»-ро пахш кунед, номи молро нависед ва онро интихоб кунед. Дар як чек метавонед якчанд мол илова кунед. Миқдор ва нархро санҷед ва «Сабт кардан»-ро пахш кунед. Миқдори мол дар анбор худ аз худ кам мешавад.'],
+    ['Фурӯшро чӣ тавр сабт мекунам?', 'Тугмаи «Фурӯш»-ро пахш кунед. Дар тиреза аксҳои мол намоёнанд: ҳар пахш як адад ба сабад илова мекунад, рақами болои акс нишон медиҳад, ки чанд адад дар сабад аст. Барои ёфтани моли дигар номашро нависед. Дар сабад миқдор ва нархро санҷед ва «Сабт кардан»-ро пахш кунед — ҳамаи мол дар як чек сабт мешавад. Миқдори мол дар анбор худ аз худ кам мешавад.'],
     ['Моли омадаро чӣ тавр сабт мекунам?', 'Тугмаи «Воридот»-ро пахш кунед ва ҷоеро интихоб кунед, ки мол ба он ҷо омад. Агар мол дар рӯйхат набошад, номашро нависед ва «Моли нав»-ро интихоб кунед. Нархи нав дар корти мол ҳам иваз мешавад.'],
     ['Акси молро чӣ тавр мегузорам?', 'Молро кушоед ва «Тағйир додан»-ро пахш кунед, ё ҳангоми иловаи моли нав дар болои форма «Камера» ё «Галерея»-ро интихоб кунед. Акс дар рӯйхати молҳо, анбор ва амалиётҳо нишон дода мешавад.'],
     ['Молро аз анбор ба мағоза чӣ тавр мегузаронам?', 'Тугмаи «Интиқол»-ро пахш кунед, ҷойи баромад ва ҷойи расиданро интихоб кунед, баъд мол ва миқдорашро нависед. Барнома нишон медиҳад, ки дар ҳар ҷой чанд мемонад.'],
@@ -651,6 +675,8 @@ const HELP = [
     ['Агар мизоҷ моли ба қарз гирифтаро баргардонад?', 'Фурӯшро дар «Амалиётҳо» кушоед ва «Бозгашт»-ро пахш кунед. Мол ба анбор бармегардад ва маблағи он аз қарзи мизоҷ худ аз худ кам мешавад.'],
     ['Ҳисоботро чӣ тавр мебинам?', 'Саҳифаи «Ҳисобот»-ро кушоед ва бахшро интихоб кунед: Умумӣ, Фурӯш, Фоида, Қарз, Хароҷот, Воридот ё Интиқол. Давраро интихоб кунед ё сана нависед. Бо тугмаи «Филтр» анбор, гурӯҳ, номи мол ва намуди хароҷотро интихоб кардан мумкин аст. Тугмаи CSV ҷадвалро ба файл мегирад.'],
     ['Молро дигар намефурӯшам, вале таърихаш бояд монад', 'Молро кушоед, «Тағйир додан»-ро пахш кунед ва «Ба бойгонӣ гузоштан»-ро интихоб кунед. Мол аз рӯйхат пинҳон мешавад, вале таърихи фурӯш боқӣ мемонад.'],
+    ['Якчанд молро якбора чӣ тавр нест мекунам?', 'Дар саҳифаи «Молҳо» тугмаи «Интихоб»-ро пахш кунед ва молҳоро пахш карда қайд кунед. Дар поён «Ба бойгонӣ» ё «Нест кардан»-ро интихоб кунед. Як молро аз корти худи он ҳам нест кардан мумкин аст: молро кушоед ва «Нест кардан»-ро пахш кунед. Агар мол таърихи фурӯш дошта бошад, барнома бойгониро тавсия медиҳад, то ҳисобот вайрон нашавад.'],
+    ['Рӯйхати молҳоро ба Excel чӣ тавр мегирам?', 'Дар «Танзимот» «Рӯйхати молҳо — Excel»-ро пахш кунед. Барнома маълумоти тозаро аз ҷадвал мегирад ва файл месозад: акси мол, бақия дар ҳар анбор, ҳамагӣ, нархҳо, арзиш, фоидаи интизорӣ ва ҷамъ дар як варақ. Файл дар Excel, WPS ва Google Sheets кушода мешавад.'],
     ['Маълумот дар куҷо нигоҳ дошта мешавад?', 'Ҳама чиз дар ҷадвали Google нигоҳ дошта мешавад. Барнома маълумотро ҳар дақиқа ва ҳангоми кушодан нав мекунад. Агар дар ҷадвал чизеро дастӣ иваз кунед, он дар барнома низ пайдо мешавад. Ғайр аз ин, сервер ҳар рӯз нусхаи эҳтиётии ҷадвалро нигоҳ медорад.']
 ];
 
@@ -694,6 +720,8 @@ PAGES.set = {
                     <h2 class="list-h">Ҷадвали Google</h2>
                     ${S.sheet ? `<a class="set-item" href="https://docs.google.com/spreadsheets/d/${encodeURIComponent(S.sheet)}/edit" target="_blank" rel="noopener">
                         <span class="tile tone-sale">${ic('sheet', 18)}</span><span class="set-t"><b>Кушодани ҷадвал</b><small>${fmt(S.products.length)} мол · ${fmt(S.tx.length)} амалиёт · ${fmt(S.exp.length)} хароҷот</small></span><span class="btn sm t-sale">${ic('sheet', 14)}Кушодан</span></a>` : ''}
+                    <button class="set-item" data-act="xlsx">
+                        <span class="tile tone-sale">${ic('download', 18)}</span><span class="set-t"><b>Рӯйхати молҳо — Excel</b><small>Акс, бақия дар ҳар анбор, нарх, арзиш ва ҷамъ · як варақ</small></span><span class="btn sm t-sale set-go">${ic('download', 14)}Боргирӣ</span></button>
                     ${item('sync', 'tone-buy', 'Навсозӣ', `Охирин бор: ${synced}`, 'sync', '', 'Нав кардан')}
                 </div>
 
