@@ -82,13 +82,24 @@ const st = (page, f, ...a) => page.evaluate(f, ...a);
     ok(cart.badges.includes('×2') && cart.badges.filter(x => x === '×1').length === 2, 'tiles show how many are in the cart: ' + cart.badges.join(' '));
     ok(cart.count === '3 мол', 'footer counts the lines: ' + cart.count);
     ok(await page.$('.ov .pick-i:nth-child(1).in') !== null && await nameOf(3) === c, 'catalog stays open after picking (no hiding)');
+    // ҷустуҷӯ: пахши такрорӣ ҳамон молро зиёд мекунад, ҷустуҷӯ мемонад
+    await page.type('.ov .pick input', 'лампа');
+    await wait(80);
+    const lamp = await page.$eval('.ov .pick-i:nth-child(1) .pt-n', e => e.textContent);
+    await page.click('.ov .pick-i:nth-child(1)');
+    await page.click('.ov .pick-i:nth-child(1)');
+    const lampLine = await st(page, n => { const l = [...document.querySelectorAll('.ov .line')].find(x => x.querySelector('.mini-b b').textContent === n); return l && l.querySelector('[data-v=q]').value; }, lamp);
+    ok(lampLine === '2' && await page.$eval('.ov .pick input', e => e.value) === 'лампа', 'tapping a search result twice adds 2 of the same item, search stays');
+    ok(await page.$eval('.ov .pick-i:nth-child(1) .pt-c', e => e.textContent) === '×2', 'search result shows ×2');
+    await page.click('.ov .pick [data-clear]');
+    ok(await page.$eval('.ov .pick input', e => e.value) === '' && await page.$$eval('.ov .pick-i', e => e.length) >= 8, 'clear button brings the full catalog back');
     // ҷустуҷӯ + Enter
     await page.type('.ov .pick input', 'прожектор');
     await wait(80);
     ok(await page.$$eval('.ov .pick-i', e => e.length) === 1, 'search filters the catalog to one match');
     await page.keyboard.press('Enter');
     await wait(80);
-    ok(await page.$eval('.ov .pick input', e => e.value) === '' && await page.$$eval('.ov .line', e => e.length) === 4, 'Enter adds the match and clears the search');
+    ok(await page.$eval('.ov .pick input', e => e.value) === '' && await page.$$eval('.ov .line', e => e.length) === 5, 'Enter adds the match and clears the search');
     await page.screenshot({ path: path.join(OUT, 'sale-1280.png') });
     const before = t.Transactions.length;
     await page.click('.ov [data-save]');
@@ -99,8 +110,8 @@ const st = (page, f, ...a) => page.evaluate(f, ...a);
     await page.click('.ov:last-child [data-yes]');
     await page.waitForFunction(() => !document.querySelector('.ov'), { timeout: 10000 });
     const ap = log.appends.filter(x => x.sheet === 'Transactions');
-    ok(ap.length === 1 && ap[0].rows.length === 4 && new Set(ap[0].rows.map(r => r[14])).size === 1, 'saved as ONE append of 4 rows with one receipt code');
-    ok(t.Transactions.length === before + 4, 'sheet got 4 sale rows');
+    ok(ap.length === 1 && ap[0].rows.length === 5 && new Set(ap[0].rows.map(r => r[14])).size === 1, 'saved as ONE append of 5 rows with one receipt code');
+    ok(t.Transactions.length === before + 5, 'sheet got 5 sale rows');
     ok(errors.length === 0, 'no console errors in sale flow ' + JSON.stringify(errors.slice(0, 2)));
     await ctx.close();
 }

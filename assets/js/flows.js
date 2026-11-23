@@ -23,11 +23,12 @@ function quickProducts(limit = 10) {
 /* Каталоги мол дар тиреза: ҷустуҷӯ ва аксҳои мол, ҳамеша дар пеши чашм.
    Бе ҷустуҷӯ — молҳои бештар истифодашуда, бо ҷустуҷӯ — натиҷаҳо.
    Пахш кардани акс молро илова мекунад; badge(p) рақами болои аксро медиҳад («×2» — чанд адад дар сабад). */
-function mountPicker(root, { onPick, onNew, stockAt, price, badge, max = 12 }) {
+function mountPicker(root, { onPick, onNew, stockAt, price, badge, first, max = 12 }) {
     root.innerHTML = `<div class="pick"><div class="search">${ic('search', 17)}
-        <input type="search" data-auto placeholder="Ном ё рамзи молро нависед" autocomplete="off" enterkeyhint="search" aria-label="Ҷустуҷӯи мол"></div>
+        <input type="search" data-auto placeholder="Ном ё рамзи молро нависед" autocomplete="off" enterkeyhint="search" aria-label="Ҷустуҷӯи мол">
+        <button type="button" class="search-x" data-clear aria-label="Тоза кардани ҷустуҷӯ" hidden>${ic('x', 15)}</button></div>
         <div class="pick-grid"></div><p class="pick-more" hidden></p></div>`;
-    const inp = $('input', root), grid = $('.pick-grid', root), more = $('.pick-more', root);
+    const inp = $('input', root), grid = $('.pick-grid', root), more = $('.pick-more', root), clr = $('[data-clear]', root);
     let items = [], hot = 0;
 
     function tile(it, i, q) {
@@ -42,27 +43,37 @@ function mountPicker(root, { onPick, onNew, stockAt, price, badge, max = 12 }) {
     }
     function draw() {
         const q = inp.value.trim();
-        const found = q ? matchProducts(q, 30) : quickProducts(max);
+        /* Ҷойи плиткаҳо иваз намешавад (пахши такрорӣ ҳамон молро илова мекунад).
+           Моле, ки дар сабад ҳаст, вале дар рӯйхати асосӣ нест, дар охир меистад, то рақами «×2»-и он намоён бошад. */
+        let found;
+        if (q) found = matchProducts(q, 30);
+        else {
+            const base = quickProducts(max), inCart = first ? first().filter(p => isActive(p) && !base.includes(p)) : [];
+            found = [...base, ...inCart];
+        }
         items = found.map(p => ({ p }));
         if (onNew && q && !found.some(p => norm(p.name) === norm(q))) items.unshift({ isNew: true, q });
         hot = Math.min(hot, Math.max(items.length - 1, 0));
         grid.innerHTML = items.map((it, i) => tile(it, i, q)).join('') || '<div class="pick-none">Чунин мол нест. Номро дигар хел нависед.</div>';
+        clr.hidden = !q;
         const all = activeProds().length;
         more.hidden = !!q || all <= found.length;
         more.textContent = `Боз ${fmt(all - found.length)} мол ҳаст — барои ёфтан номашро нависед.`;
     }
-    function choose(i) {
+    /* Пахши плитка ҷустуҷӯро нигоҳ медорад: боз пахш — боз як адад. Enter (клавиатура) илова мекунад ва барои моли навбатӣ тоза мекунад. */
+    function choose(i, clear) {
         const it = items[i];
         if (!it) return;
         const q = inp.value.trim();
-        if (q) { inp.value = ''; hot = 0; }
+        if (clear || it.isNew) { inp.value = ''; hot = 0; }
         if (it.isNew) onNew(it.q); else onPick(it.p);
         draw();
-        if (q && matchMedia('(hover: hover)').matches) inp.focus();
+        if (clear && q && matchMedia('(hover: hover)').matches) inp.focus();
     }
+    clr.addEventListener('click', () => { inp.value = ''; hot = 0; draw(); inp.focus(); });
     inp.addEventListener('input', () => { hot = 0; draw(); });
     inp.addEventListener('keydown', e => {
-        if (e.key === 'Enter') { e.preventDefault(); if (inp.value.trim()) choose(hot); }
+        if (e.key === 'Enter') { e.preventDefault(); if (inp.value.trim()) choose(hot, true); }
         else if (e.key === 'ArrowDown' && items.length && inp.value.trim()) { e.preventDefault(); hot = (hot + 1) % items.length; draw(); }
         else if (e.key === 'ArrowUp' && items.length && inp.value.trim()) { e.preventDefault(); hot = (hot - 1 + items.length) % items.length; draw(); }
     });
@@ -279,6 +290,7 @@ function docModal(kind, preset = null) {
         stockAt: srcLoc,
         price: kind === 'move' ? null : p => kind === 'buy' ? num(p.purchase_price) : num(p.sale_price),
         badge: p => { const l = lines.find(x => String(x.p.id) === String(p.id)); return l ? '×' + qty(num(l.q)) : ''; },
+        first: () => lines.map(l => prodBy(l.p.id) || l.p),
         onPick: addLine,
         onNew: kind === 'buy' ? name => productForm(null, { name, noOpening: true, onSaved: addLine }) : null
     });
