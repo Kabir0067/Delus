@@ -1,28 +1,40 @@
 #!/bin/sh
 # DELUS — hook-и git дар сервер: пас аз `git push` версияи навро ба /opt/delus мегузорад ва барномаро бозоғозӣ мекунад.
+# Агар коди нав вайрон бошад ё барнома пас аз бозоғозӣ ҷавоб надиҳад, версияи пешина худаш бармегардад.
 # Ҷой: /home/delus/delus.git/hooks/post-receive
 set -e
 TARGET=/opt/delus
 GIT_DIR=$(cd "$(dirname "$0")/.." && pwd)
 export GIT_DIR
+
+healthy() {
+    for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+        sleep 1
+        if curl -fsS -m 5 -o /dev/null http://127.0.0.1:8080/api/health; then return 0; fi
+    done
+    return 1
+}
+back() {
+    echo "ХАТО: $1 — версияи пешина бармегардад"
+    git --work-tree="$TARGET" checkout -f "$old"
+    git update-ref refs/heads/main "$old"
+    git rev-parse --short "$old" > "$TARGET/VERSION"
+    sudo -n /usr/bin/systemctl restart delus
+    if healthy; then echo "DELUS: версияи пешина кор мекунад ($(git rev-parse --short "$old"))"; fi
+    exit 1
+}
+
 while read old new ref; do
     [ "$ref" = "refs/heads/main" ] || continue
     git --work-tree="$TARGET" checkout -f main
-    if ! node --check "$TARGET/server/server.js"; then
-        echo "ХАТО: server.js вайрон аст — версияи пешина бармегардад"
-        git --work-tree="$TARGET" checkout -f "$old"
-        git update-ref refs/heads/main "$old"
-        sudo -n /usr/bin/systemctl restart delus
-        exit 1
-    fi
+    for f in server/server.js server/ops.js; do
+        if [ -f "$TARGET/$f" ] && ! node --check "$TARGET/$f"; then back "$f вайрон аст"; fi
+    done
     git rev-parse --short "$new" > "$TARGET/VERSION"
     sudo -n /usr/bin/systemctl restart delus
-    for i in 1 2 3 4 5 6 7 8 9 10; do
-        sleep 1
-        if curl -fsS -m 5 -o /dev/null http://127.0.0.1:8080/api/health; then
-            echo "DELUS: версияи нав кор мекунад ($(git rev-parse --short "$new"))"
-            exit 0
-        fi
-    done
-    echo "ОГОҲӢ: барнома ҷавоб намедиҳад — journalctl -u delus -n 50"
+    if healthy; then
+        echo "DELUS: версияи нав кор мекунад ($(git rev-parse --short "$new"))"
+        exit 0
+    fi
+    back "барнома пас аз бозоғозӣ ҷавоб намедиҳад (journalctl -u delus -n 50)"
 done
