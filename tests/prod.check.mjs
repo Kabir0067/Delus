@@ -46,7 +46,8 @@ try {
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.readFile(file);
     const ws = wb.getWorksheet('Молҳо');
-    ok(ws && ws.getRow(8 + x.n).getCell(1).value === 'ҲАМАГӢ', `Excel: ${x.n} products, totals row in place (${x.kb} KB, ${Date.now() - t0} ms)`);
+    /* бе мол сатри «Ҳоло мол нест» меистад */
+    ok(ws && ws.getRow(8 + Math.max(x.n, 1)).getCell(1).value === 'ҲАМАГӢ', `Excel: ${x.n} products, totals row in place (${x.kb} KB, ${Date.now() - t0} ms)`);
     ok(ws.getImages().length === x.photos, `Excel: ${ws.getImages().length} of ${x.photos} photos embedded`);
 
     /* ду моли санҷишӣ бо бақия */
