@@ -19,9 +19,9 @@
         /* Мавзӯъро пеш аз намоиш мегузорем, то экран нахузад */
         try { var t = localStorage.getItem('delus.theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) { }
     </script>
-    <meta name="description" content="DELUS · Системаи содда ва мукаммали идоракунии савдо, анбор ва ҳисобот барои соҳибкорон.">
+    <meta name="description" content="DELUS: ҳисоби мол, анбор, фурӯш, хароҷот ва қарз.">
     <link rel="stylesheet" href="assets/css/style.css?v=1">
-    <!-- Сервер файлҳои assets/js-ро ба як файли app.js ҷамъ мекунад (як дархост ба ҷои шаш); ?v худкор аз мундариҷа ҳисоб мешавад -->
+    <!-- Сервер файлҳои assets/js-ро ба як файли app.js ҷамъ мекунад (як дархост ба ҷои ҳашт); ?v худкор аз мундариҷа ҳисоб мешавад -->
     <script src="assets/js/app.js?v=1" defer></script>
 </head>
 
@@ -168,6 +168,9 @@
             <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="19" r="2.6"/><path d="m8.3 13.3 7.4 4.4M15.7 6.3l-7.4 4.4"/></symbol>
             <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 20h14"/></symbol>
             <symbol id="i-receipt" viewBox="0 0 24 24"><path d="M5 3h14v18l-2.3-1.5L14.3 21 12 19.5 9.7 21l-2.4-1.5L5 21z"/><path d="M9 8h6M9 12h6M9 16h3"/></symbol>
+            <symbol id="i-scan" viewBox="0 0 24 24"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M7 9v6M11 9v6M15 9v6M17 9v6" stroke-width="1.6"/></symbol>
+            <symbol id="i-calc" viewBox="0 0 24 24"><rect x="4" y="2.5" width="16" height="19" rx="2.5"/><path d="M8 6.5h8M8 11.5h1M12 11.5h1M16 11.5h.01M8 15h1M12 15h1M16 15h.01M8 18.5h1M12 18.5h1M16 18.5h.01"/></symbol>
+            <symbol id="i-tally" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2.5"/><path d="M8 8h8M8 12.5h5M8 17h3M15.5 15.5l1.5 1.5 3-3"/></symbol>
             <symbol id="i-more" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><rect x="14" y="14" width="6" height="6" rx="1.5"/></symbol>
         </defs>
     </svg>
@@ -187,18 +190,18 @@
                     <span><b>DELUS</b><small>Идоракунии савдо ва анбор</small></span>
                 </div>
                 <div class="lh-body">
-                    <h2>Ҳамаи тиҷорати шумо дар як ҷо</h2>
-                    <p>Назорати пурраи молҳо, савдои ҳаррӯза ва ҳисобу китоби дӯкон бевосита дар телефони шумо.</p>
+                    <h2>Мағозаи шумо дар телефон</h2>
+                    <p>Мол, фурӯш, хароҷот ва қарзро сабт кунед ва ҳар вақт бинед, ки чӣ ҳаст ва чӣ қадар фоида шуд.</p>
                     <ul class="lh-list">
                         <li><span class="lh-i"><svg class="ic" width="18" height="18"><use href="#i-box"></use></svg></span>
-                            <span><b>Ҳисоби дақиқи молҳо</b><small>Склад ва мағоза зери назорати доимӣ</small></span></li>
+                            <span><b>Ҳисоби мол</b><small>Дар анбор ва мағоза чанд мол ҳаст</small></span></li>
                         <li><span class="lh-i"><svg class="ic" width="18" height="18"><use href="#i-chart"></use></svg></span>
-                            <span><b>Савдо ва даромад</b><small>Фурӯши рӯз, фоидаи соф ва хароҷот</small></span></li>
+                            <span><b>Фурӯш ва фоида</b><small>Фурӯши рӯз, фоида ва хароҷот</small></span></li>
                         <li><span class="lh-i"><svg class="ic" width="18" height="18"><use href="#i-debt"></use></svg></span>
-                            <span><b>Дафтари қарз ва насия</b><small>Рӯйхати мизоҷон ва муҳлати пардохт</small></span></li>
+                            <span><b>Қарз (насия)</b><small>Кӣ чанд қарздор аст ва кай медиҳад</small></span></li>
                     </ul>
                 </div>
-                <small class="lh-foot">DELUS · Системаи боэътимоди идоракунии савдо</small>
+                <small class="lh-foot">DELUS · анбор ва савдо</small>
             </section>
 
             <!-- Формаи воридшавӣ -->
@@ -234,7 +237,7 @@
                     <svg class="ic lb-arrow" width="18" height="18" aria-hidden="true"><use href="#i-arrow"></use></svg>
                     <span class="lb-spin" aria-hidden="true"></span>
                 </button>
-                <p class="login-safe"><svg class="ic" width="15" height="15" aria-hidden="true"><use href="#i-shield"></use></svg>Маълумот ва ҳисобҳои шумо пурра муҳофизат шудаанд</p>
+                <p class="login-safe"><svg class="ic" width="15" height="15" aria-hidden="true"><use href="#i-shield"></use></svg>Пайвасти бехатар (HTTPS)</p>
             </form>
         </div>
     </div>

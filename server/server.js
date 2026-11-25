@@ -43,9 +43,11 @@ const GOOGLE_DOWN = 'Ҷадвали Google ҳоло ҷавоб намедиҳа�
 const VERSION = (() => { try { return fs.readFileSync(path.join(ROOT, 'VERSION'), 'utf8').trim(); } catch (e) { return 'dev'; } })();
 
 const SHEETS = new Set(['Products', 'Locations', 'Transactions', 'Settings', 'Images', 'Expenses', 'Debts', 'DebtPayments', 'Stock_Report']);
-const GOOGLE = `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}`;
+/* GOOGLE_API ва GOOGLE_TOKEN танҳо барои санҷиш: сервери сохтаи Google дар компютер */
+const GOOGLE = `${conf('GOOGLE_API', 'https://sheets.googleapis.com/v4/spreadsheets')}/${SHEET_ID}`;
+const STATIC_TOKEN = conf('GOOGLE_TOKEN', '');
 
-const KEY = (() => {
+const KEY = STATIC_TOKEN ? {} : (() => {
     try { return JSON.parse(fs.readFileSync(KEY_FILE, 'utf8')); }
     catch (e) { console.error(`Файли калид ёфт нашуд: ${KEY_FILE}`); process.exit(1); }
 })();
@@ -56,6 +58,7 @@ const log = (...a) => console.log(new Date().toISOString(), ...a);
 /* ---------- Google: токен ---------- */
 let gToken = null;
 async function googleToken() {
+    if (STATIC_TOKEN) return STATIC_TOKEN;
     const now = Math.floor(Date.now() / 1000);
     if (gToken && now < gToken.exp - 60) return gToken.t;
     const b64 = v => Buffer.from(v).toString('base64url');
@@ -238,18 +241,32 @@ async function colMax(range) {
     if (r.status !== 200) throw new Error('read ' + range + ' ' + r.status);
     return (JSON.parse(r.text).values || []).slice(1).reduce((m, row) => Math.max(m, parseInt(row[0], 10) || 0), 0);
 }
-function reserveIds(sheet, n) {
-    return inTurn(async () => {
-        let max = await colMax(`${sheet}!A:A`);
+/* Ҷадвал дар як дақиқа як бор санҷида мешавад: агар касе дар худи Google Sheets сатр илова карда бошад, рақами он ҳам ба ҳисоб меравад.
+   Дар байн рақам аз хотираи сервер дода мешавад — сабт як дархост камтар ва тезтар аст. */
+const idCheckedAt = new Map();
+async function reserveNow(sheet, n) {
+    const now = Date.now();
+    let max = 0;
+    if (reserved[sheet] === undefined || !idCheckedAt.has(sheet) || now - idCheckedAt.get(sheet) > 60e3) {
+        max = await colMax(`${sheet}!A:A`);
         // рақами мол аз рақамҳои мол дар амалиётҳо ҳам калонтар бошад
         if (sheet === 'Products') max = Math.max(max, await colMax('Transactions!E:E'));
-        if (reserved[sheet] === undefined) reserved[sheet] = backupMax(sheet);
-        const first = Math.max(reserved[sheet] || 0, max) + 1;
-        reserved[sheet] = first + n - 1;
-        saveReserved();
-        return first;
-    });
+        idCheckedAt.set(sheet, now);
+    }
+    if (reserved[sheet] === undefined) reserved[sheet] = backupMax(sheet);
+    const first = Math.max(reserved[sheet] || 0, max) + 1;
+    reserved[sheet] = first + n - 1;
+    saveReserved();
+    return first;
 }
+const reserveIds = (sheet, n) => inTurn(() => reserveNow(sheet, n));
+
+/* ---------- /api/op: фурӯш, воридот, қарз, пардохт ва хароҷот бо як дархост ва бе такрор (server/ops.js) ---------- */
+const ops = require('./ops.js').createOps({
+    google, inTurn, reserveNow, dataDir: DATA_DIR, log,
+    sheetIdOf: async title => { const g = await sheetIds(); const k = Object.keys(g).find(id => g[id] === title); return k === undefined ? undefined : +k; },
+    onWrite: () => { generation++; cache.clear(); }
+});
 
 /* ---------- /api/sheets: танҳо амалҳое, ки барнома истифода мебарад ---------- */
 async function proxy(req, res, rest, search) {
@@ -348,23 +365,36 @@ async function api(req, res, url) {
         return send(res, 200, { first: await reserveIds(sheet, count) });
     }
 
+    if (p === '/api/op' && req.method === 'POST') {
+        let body;
+        try { body = JSON.parse(await readBody(req, 2 * 1024 * 1024) || '{}'); } catch (e) { return send(res, 400, { error: 'Маълумот нодуруст аст.' }); }
+        try { return send(res, 200, await ops.run(body)); }
+        catch (e) {
+            if (e.known) return send(res, 400, { error: e.message });
+            if (e.gstatus === 429) return send(res, 503, { error: 'Ҷадвал ҳоло банд аст. Сабт пас аз як дақиқа худаш фиристода мешавад.' });
+            if (e.gstatus === 403 || e.gstatus === 404) return send(res, 502, { error: 'Барнома ба ҷадвал дастрасӣ надорад. Ба соҳиби барнома хабар диҳед.' });
+            if (e.gstatus) return send(res, 503, { error: GOOGLE_DOWN });
+            throw e;
+        }
+    }
+
     if (p.startsWith('/api/sheets')) return proxy(req, res, p.slice('/api/sheets'.length), url.search);
     send(res, 404, { error: 'not found' });
 }
 
 /* ---------- файлҳои сайт ----------
-   - 6 файли JS ба як app.js ҷамъ мешаванд: дар интернети суст як дархост аз шаш дархост хеле тезтар аст;
+   - файлҳои JS ба як app.js ҷамъ мешаванд: дар интернети суст як дархост аз ҳашт дархост хеле тезтар аст;
    - дар index.html ?v=… худкор аз мундариҷаи файл ҳисоб мешавад, бинобар ин пас аз ҳар навсозӣ
      браузер ҳатман файли навро мегирад ва то он вақт файли кӯҳнаро аз кэш истифода мебарад;
    - матн бо brotli ё gzip фишурда мешавад. */
 const MIME = {
     '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
     '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json', '.json': 'application/json',
-    '.webp': 'image/webp', '.jpg': 'image/jpeg', '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8', '.woff2': 'font/woff2'
+    '.webp': 'image/webp', '.jpg': 'image/jpeg', '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8', '.woff2': 'font/woff2', '.wasm': 'application/wasm'
 };
-const COMPRESS = new Set(['.html', '.js', '.css', '.svg', '.webmanifest', '.json', '.txt']);
+const COMPRESS = new Set(['.html', '.js', '.css', '.svg', '.webmanifest', '.json', '.txt', '.wasm']);
 const BUNDLE = 'assets/js/app.js';
-const JS_ORDER = ['config', 'core', 'ui', 'pages', 'debts', 'xlsx', 'flows'].map(n => `assets/js/${n}.js`);
+const JS_ORDER = ['config', 'core', 'ui', 'pages', 'debts', 'xlsx', 'scan', 'flows'].map(n => `assets/js/${n}.js`);
 const REF = /(assets\/[\w./-]+)\?v=\w+/g;
 const fileCache = new Map();
 
@@ -405,7 +435,7 @@ function serveFile(req, res, url) {
     let p;
     try { p = decodeURIComponent(url.pathname); } catch (e) { return notFound(res); }
     if (p === '/') p = '/index.html';
-    const okPath = p === '/index.html' || p === '/manifest.webmanifest' || p === '/robots.txt' || p.startsWith('/assets/');
+    const okPath = p === '/index.html' || p === '/manifest.webmanifest' || p === '/robots.txt' || p === '/sw.js' || p.startsWith('/assets/');
     if (!okPath || p.includes('..') || p.includes(String.fromCharCode(0)) || !path.join(ROOT, p).startsWith(ROOT + path.sep)) return notFound(res);
     const d = asset(p.slice(1));
     if (!d) return notFound(res);
@@ -414,7 +444,7 @@ function serveFile(req, res, url) {
         'Content-Type': MIME[d.ext] || 'application/octet-stream',
         ETag: `"${d.hash}"`,
         // no-transform: Cloudflare ба саҳифа скрипти бегона (analytics) илова намекунад
-        'Cache-Control': d.ext === '.html' ? 'no-cache, no-transform' : versioned ? 'public, max-age=31536000, immutable' : 'public, max-age=3600',
+        'Cache-Control': (d.ext === '.html' || p === '/sw.js') ? 'no-cache, no-transform' : versioned ? 'public, max-age=31536000, immutable' : 'public, max-age=3600',
         ...(d.gz ? { Vary: 'Accept-Encoding' } : {})
     };
     if (req.headers['if-none-match'] === headers.ETag) { res.writeHead(304, headers); return res.end(); }
@@ -435,7 +465,7 @@ const SECURITY = {
     'X-Frame-Options': 'DENY',
     'Referrer-Policy': 'same-origin',
     'Permissions-Policy': 'camera=(self), microphone=(), geolocation=()',
-    'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob: https:; connect-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob: https:; connect-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 };
 
 /* ---------- тозакунӣ: сессияҳои кӯҳна ва кӯшишҳои воридшавӣ хотираро пур намекунанд ---------- */

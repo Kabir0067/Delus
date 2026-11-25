@@ -25,7 +25,7 @@ const dotDate = d => d ? `${+d.slice(8)} ${MONTHS[+d.slice(5, 7) - 1]}` : '';
 function repLabel(q) {
     const [from, to] = repRange(q);
     const named = !q.from && !q.to && (PERIODS.find(p => p[0] === q.k) || [])[1];
-    const when = named || (from && to ? (from === to ? dotDate(from) : `${dotDate(from)} — ${dotDate(to)}`) : from ? `Аз ${dotDate(from)}` : to ? `То ${dotDate(to)}` : 'Ҳама');
+    const when = named || (from && to ? (from === to ? dotDate(from) : `${dotDate(from)} то ${dotDate(to)}`) : from ? `Аз ${dotDate(from)}` : to ? `То ${dotDate(to)}` : 'Ҳама');
     return [when, q.loc ? locName(q.loc) : '', q.cat || ''].filter(Boolean).join(' · ');
 }
 
@@ -37,7 +37,7 @@ function report(q) {
     let base = S.tx;
     if (q.cat) base = base.filter(x => String((prodBy(x.product_id) || {}).category).trim() === q.cat);
     if (q.q) {
-        const ids = new Set(S.products.filter(p => hasAll(`${p.name} ${p.product_code}`, q.q)).map(p => String(p.id)));
+        const ids = new Set(S.products.filter(p => hasAll(prodText(p), q.q)).map(p => String(p.id)));
         base = base.filter(x => ids.has(String(x.product_id)));
     }
     if (q.loc) base = base.filter(x => String(x.from_location_id) === String(q.loc) || String(x.to_location_id) === String(q.loc));
@@ -387,7 +387,7 @@ PAGES.rep = {
             <button class="btn f-csv" data-act="repCsv">${ic('in', 16)}CSV</button>
             <div class="f-more ${S.fOpen ? 'open' : ''}">
                 <div class="dates">
-                    <input class="input" type="date" data-r="from" value="${esc(S.rep.from)}" aria-label="Аз сана"><span>—</span>
+                    <input class="input" type="date" data-r="from" value="${esc(S.rep.from)}" aria-label="Аз сана"><span>то</span>
                     <input class="input" type="date" data-r="to" value="${esc(S.rep.to)}" aria-label="То сана">
                 </div>
                 <select class="input" data-r="loc" aria-label="Анбор ё мағоза">${options([['', 'Ҳамаи анборҳо'], ...S.locations.map(l => [l.id, l.name])], S.rep.loc)}</select>
@@ -428,7 +428,7 @@ document.addEventListener('pointerover', e => {
 function filterProducts() {
     const f = S.f;
     let list = f.status === 'arch' ? S.products.filter(p => !isActive(p)) : activeProds();
-    if (f.q) list = list.filter(p => hasAll(`${p.name} ${p.product_code} ${p.category} ${p.series} ${p.description}`, f.q));
+    if (f.q) list = rankBy(list, prodText, f.q);
     if (f.cat) list = list.filter(p => String(p.category).trim() === f.cat);
     if (f.status === 'low') list = list.filter(p => stockState(p) === 'low');
     if (f.status === 'out') list = list.filter(p => ['out', 'neg'].includes(stockState(p)));
@@ -440,7 +440,8 @@ function filterProducts() {
         priceDown: (a, b) => num(b.sale_price) - num(a.sale_price),
         qtyUp: (a, b) => qtyAll(a.id) - qtyAll(b.id)
     };
-    return [...list].sort(sorters[f.sort] || sorters.name);
+    /* бо ҷустуҷӯ ва бе тартиби интихобшуда: беҳтарин мувофиқат аввал */
+    return f.q && !f.sort ? list : [...list].sort(sorters[f.sort] || sorters.name);
 }
 
 /* Ҳолати «Интихоб»: корт тамоман тугмаи интихоб мешавад */
@@ -469,7 +470,7 @@ function productCard(p) {
                 <div><small>Нархи харид</small><b>${fmt(p.purchase_price, 2)}</b></div>
             </div>
             ${on ? `<div class="pcard-a">
-                <button class="btn t-sale" data-act="sale" data-id="${id}">${ic('sale', 16)}Фурӯш</button>
+                <button class="btn sale-solid" data-act="quick" data-id="${id}">${ic('sale', 16)}Фурӯш</button>
                 <button class="btn icon t-buy" data-act="buy" data-id="${id}" aria-label="Воридот" title="Воридот">${ic('in', 16)}</button>
                 <button class="btn icon t-move" data-act="move" data-id="${id}" aria-label="Интиқол" title="Интиқол">${ic('move', 16)}</button>
                 <button class="btn icon edit" data-act="prodEdit" data-id="${id}" aria-label="Тағйир додан" title="Тағйир додан">${ic('edit', 16)}</button>
@@ -480,7 +481,7 @@ function productCard(p) {
 
 PAGES.prod = {
     head: () => `<div class="toolbar">
-        ${searchBox('Ҷустуҷӯи мол')}
+        ${searchBox('Ҷустуҷӯи мол', true)}
         ${filterBtn(+!!S.f.cat)}
         <button class="btn sel-btn ${S.selOn ? 'on' : ''}" data-act="selMode" aria-pressed="${S.selOn}" title="Якчанд молро интихоб кардан: ба бойгонӣ ё нест кардан">${ic(S.selOn ? 'x' : 'check', 16)}<span>${S.selOn ? 'Бекор' : 'Интихоб'}</span></button>
         <button class="btn primary" data-act="prodNew">${ic('plus', 16)}Моли нав</button>
@@ -519,7 +520,7 @@ PAGES.prod = {
 function filterStock() {
     const f = S.f;
     let list = activeProds();
-    if (f.q) list = list.filter(p => hasAll(`${p.name} ${p.product_code} ${p.category}`, f.q));
+    if (f.q) list = rankBy(list, prodText, f.q);
     if (f.cat) list = list.filter(p => String(p.category).trim() === f.cat);
     if (f.loc) list = list.filter(p => qtyAt(p.id, f.loc) !== 0);
     if (f.only === 'need') list = list.filter(p => stockState(p) !== 'ok');
@@ -528,13 +529,13 @@ function filterStock() {
         const sold = new Set(inRange(S.tx, dayShift(-29), today()).filter(isSale).map(x => String(x.product_id)));
         list = list.filter(p => qtyAll(p.id) > 0 && !sold.has(String(p.id)));
     }
-    return [...list].sort((a, b) => String(a.name).localeCompare(String(b.name), 'ru'));
+    return f.q ? list : [...list].sort((a, b) => String(a.name).localeCompare(String(b.name), 'ru'));
 }
 const cellClass = q => q < 0 ? 'neg' : q === 0 ? 'zero' : '';
 
 PAGES.stock = {
     head: () => `<div class="toolbar">
-        ${searchBox('Ҷустуҷӯи мол')}
+        ${searchBox('Ҷустуҷӯи мол', true)}
         ${filterBtn(+!!S.f.cat)}
         <div class="f-more ${S.fOpen ? 'open' : ''}">${catSelect()}</div>
         <button class="btn t-move" data-act="move">${ic('move', 16)}Интиқол</button>
@@ -562,7 +563,7 @@ PAGES.stock = {
                 <td>${stockPill(p)}</td>
                 <td class="hide-md">${fmt(p.sale_price, 2)}</td>
                 <td><span class="acts">
-                    <button class="btn sm t-sale" data-act="sale" data-id="${esc(p.id)}" aria-label="Фурӯш">${ic('sale', 15)}<span>Фурӯш</span></button>
+                    <button class="btn sm t-sale" data-act="quick" data-id="${esc(p.id)}" aria-label="Фурӯш">${ic('sale', 15)}<span>Фурӯш</span></button>
                     <button class="btn sm t-buy" data-act="buy" data-id="${esc(p.id)}" aria-label="Воридот">${ic('in', 15)}<span>Воридот</span></button>
                 </span></td></tr>`).join('')}</tbody>
         </table></div>
@@ -615,7 +616,7 @@ PAGES.tx = {
         <select class="input" data-f="type" aria-label="Навъи амалиёт">${options([['', 'Ҳамаи амалиётҳо'], ...Object.entries(TYPES).map(([k, v]) => [k, v.t])], S.f.type || '')}</select>
         <select class="input" data-f="loc" aria-label="Ҷой">${options([['', 'Ҳамаи ҷойҳо'], ...S.locations.map(l => [l.id, l.name])], S.f.loc || '')}</select>
         <div class="dates">
-            <input class="input" type="date" data-f="from" value="${esc(S.f.from || '')}" aria-label="Аз сана"><span>—</span>
+            <input class="input" type="date" data-f="from" value="${esc(S.f.from || '')}" aria-label="Аз сана"><span>то</span>
             <input class="input" type="date" data-f="to" value="${esc(S.f.to || '')}" aria-label="То сана">
         </div>
         </div>
@@ -647,9 +648,9 @@ PAGES.tx = {
                 const p = prodBy(x.product_id) || { id: x.product_id, name: 'Мол #' + x.product_id };
                 const T = TYPES[x.type] || { t: x.type, icon: 'fix' };
                 const sign = isSale(x) ? 'plus' : isRet(x) ? 'minus' : '';
-                return `<button class="row tx-row" data-act="txView" data-id="${esc(x.id)}">
+                return `<button class="row tx-row ${isQueued(x.id) ? 'queued' : ''}" data-act="txView" data-id="${esc(x.id)}">
                     <span class="tx-p">${thumb(p)}<span class="tile ${esc(x.type)}">${ic(T.icon, 13)}</span></span>
-                    <span class="tx-b"><b>${esc(p.name)}</b><small>${esc(T.t)} · ${esc(txRoute(x))}${timeOf(x) ? ' · ' + timeOf(x) : ''}</small></span>
+                    <span class="tx-b"><b>${esc(p.name)}</b><small>${isQueued(x.id) ? `<i class="q-tag">${ic('sync', 11)}дар навбат</i> ` : ''}${esc(T.t)} · ${esc(txRoute(x))}${timeOf(x) ? ' · ' + timeOf(x) : ''}</small></span>
                     <span class="tx-v"><b class="${sign}">${isRet(x) ? '−' : ''}${money(txValue(x))}</b><small>${txQty(x, p)} × ${fmt(txPrice(x), 2)}</small></span>
                 </button>`;
             }).join('')}</div>`;
@@ -659,8 +660,11 @@ PAGES.tx = {
 
 /* ---------- 5. Танзимот ---------- */
 const HELP = [
-    ['Фурӯшро чӣ тавр сабт мекунам?', 'Тугмаи «Фурӯш»-ро пахш кунед. Дар тиреза аксҳои мол намоёнанд: ҳар пахш як адад ба сабад илова мекунад, рақами болои акс нишон медиҳад, ки чанд адад дар сабад аст. Барои ёфтани моли дигар номашро нависед. Дар сабад миқдор ва нархро санҷед ва «Сабт кардан»-ро пахш кунед — ҳамаи мол дар як чек сабт мешавад. Миқдори мол дар анбор худ аз худ кам мешавад.'],
-    ['Моли омадаро чӣ тавр сабт мекунам?', 'Тугмаи «Воридот»-ро пахш кунед ва ҷоеро интихоб кунед, ки мол ба он ҷо омад. Агар мол дар рӯйхат набошад, номашро нависед ва «Моли нав»-ро интихоб кунед. Нархи нав дар корти мол ҳам иваз мешавад.'],
+    ['Фурӯшро чӣ тавр сабт мекунам?', 'Як мол: дар «Молҳо» дар корти мол «Фурӯш»-ро пахш кунед, миқдорро санҷед ва «Фурӯхтан»-ро пахш кунед. Якчанд мол: дар саҳифаи асосӣ «Фурӯш»-ро пахш кунед. Ҳар пахши акси мол як адад ба сабад илова мекунад, рақами болои акс нишон медиҳад, ки чанд адад дар сабад аст. Баъд «Сабт кардан»-ро пахш кунед, ҳамаи мол дар як чек сабт мешавад. Миқдори мол дар анбор худ аз худ кам мешавад.'],
+    ['Штрихкодро чӣ тавр скан мекунам?', 'Дар тирезаи «Фурӯш» ё «Воридот» тугмаи камераро дар сатри ҷустуҷӯ пахш кунед ва камераро ба штрихкоди қуттӣ нишон диҳед. Ҳар скан як адад илова мекунад. Агар штрихкод нав бошад, барнома мепурсад, ки ин қуттӣ кадом мол аст. Як бор пайваст кунед, баъд мол ҳамеша бо скан ёфт мешавад. Агар камера кушода нашавад, «Рақамро нависед»-ро пахш кунед.'],
+    ['Рақамро чӣ тавр менависам?', 'Дар телефон ба майдони рақам пахш кунед, тугмаҳои калони рақам мебароянд. Рақамро пахш кунед, баъд «Тайёр»-ро. Ҳисоб ҳам кардан мумкин аст, масалан 3 × 250. Агар клавиатураи телефон лозим бошад, «Клавиатура»-ро пахш кунед.'],
+    ['Агар интернет набошад?', 'Фурӯш, воридот, интиқол, хароҷот, қарз ва пардохтро бе интернет ҳам сабт кардан мумкин аст. Сабт дар телефон нигоҳ дошта мешавад ва дар болои тугмаи навсозӣ рақам пайдо мешавад. Ҳамин ки интернет пайдо шавад, барнома онро худаш ба ҷадвал мефиристад. Барномаро пӯшед ҳам, сабт гум намешавад ва ду бор сабт намешавад.'],
+    ['Моли омадаро чӣ тавр сабт мекунам?', 'Тугмаи «Воридот»-ро пахш кунед ва ҷоеро интихоб кунед, ки мол ба он ҷо омад. Молро пахш кунед ё штрихкодашро скан кунед. Агар мол дар рӯйхат набошад, номашро нависед ва «Моли нав»-ро интихоб кунед. Нархи нав дар корти мол ҳам иваз мешавад.'],
     ['Акси молро чӣ тавр мегузорам?', 'Молро кушоед ва «Тағйир додан»-ро пахш кунед, ё ҳангоми иловаи моли нав дар болои форма «Камера» ё «Галерея»-ро интихоб кунед. Акс дар рӯйхати молҳо, анбор ва амалиётҳо нишон дода мешавад.'],
     ['Молро аз анбор ба мағоза чӣ тавр мегузаронам?', 'Тугмаи «Интиқол»-ро пахш кунед, ҷойи баромад ва ҷойи расиданро интихоб кунед, баъд мол ва миқдорашро нависед. Барнома нишон медиҳад, ки дар ҳар ҷой чанд мемонад.'],
     ['Амалиёти хато сабтшударо чӣ кор кунам?', 'Дар саҳифаи «Амалиётҳо» онро кушоед. Метавонед тағйир диҳед ё нест кунед. Ҳисоби мол худ аз худ аз нав дуруст мешавад.'],
@@ -668,15 +672,15 @@ const HELP = [
     ['Миқдори мол бо ҳисоб рост намеояд', 'Молро дар ҷояш ҳисоб кунед. Дар саҳифаи «Анбор» тугмаи «Шумориш»-ро пахш кунед ва миқдори аслиро нависед. Барнома фарқро худаш сабт мекунад.'],
     ['Хароҷотро чӣ тавр сабт мекунам?', 'Дар саҳифаи асосӣ тугмаи «Хароҷот»-ро пахш кунед ва маблағ, сана ва сабабро нависед: иҷора, маош, нақлиёт ва ғайра. Хароҷот аз фоида кам мешавад ва дар саҳифаи асосӣ нишон дода мешавад.'],
     ['Молро ба қарз (насия) чӣ тавр мефурӯшам?', 'Дар тирезаи «Фурӯш» молро интихоб кунед ва дар қисми «Пардохт» «Ба қарз (насия)»-ро пахш кунед. Номи мизоҷ ва телефонашро нависед. Агар мизоҷ ҳозир як қисми пулро медиҳад, онро дар «Ҳозир медиҳад» нависед. Агар хоҳед, рӯзеро гузоред, ки то он пулро медиҳад. Мол аз анбор кам мешавад ва қарз дар бахши «Қарз» пайдо мешавад.'],
-    ['Мизоҷ як қисми қарзашро овард — чӣ кор кунам?', 'Бахши «Қарз»-ро кушоед, мизоҷро ёбед ва «Пардохт»-ро пахш кунед. Маблағеро, ки овард, нависед ва «Сабт кардан»-ро пахш кунед. Боқимонда худ аз худ кам мешавад. Агар мизоҷ якчанд қарз дошта бошад, пул аввал ба қарзи кӯҳнатарин меравад.'],
-    ['Қарзро чӣ тавр пурра мебандам?', 'Мизоҷро кушоед ва «Пурра бастан»-ро пахш кунед — маблағи боқимонда худаш навишта мешавад. Баъди сабт қарз ба рӯйхати «Пӯшида» мегузарад, вале таърихаш боқӣ мемонад.'],
-    ['Чеки насияро чӣ тавр ба мизоҷ мефиристам?', 'Дар бахши «Қарз» дар қатори мизоҷ «Чек»-ро пахш кунед (ё дар корти мизоҷ «Чеки насия»). Барнома чеки зебо ва расмии PNG месозад, ки дар он номи харидор, рӯйхати молҳо, пардохтҳо ва маблағи боқимонда сабт шудааст. Бо пахши «Фиристодан ба мизоҷ» метавонед онро мустақиман ба Telegram ё WhatsApp фиристед.'],
+    ['Мизоҷ як қисми қарзашро овард. Чӣ кор кунам?', 'Бахши «Қарз»-ро кушоед, мизоҷро ёбед ва «Пардохт»-ро пахш кунед. Маблағеро, ки овард, нависед ва «Сабт кардан»-ро пахш кунед. Боқимонда худ аз худ кам мешавад. Агар мизоҷ якчанд қарз дошта бошад, пул аввал ба қарзи кӯҳнатарин меравад.'],
+    ['Қарзро чӣ тавр пурра мебандам?', 'Мизоҷро кушоед ва «Пурра бастан»-ро пахш кунед: маблағи боқимонда худаш навишта мешавад. Баъди сабт қарз ба рӯйхати «Пӯшида» мегузарад, вале таърихаш мемонад.'],
+    ['Чеки насияро чӣ тавр ба мизоҷ мефиристам?', 'Дар бахши «Қарз» дар қатори мизоҷ «Чек»-ро пахш кунед. Барнома чекро ҳамчун акс месозад: номи харидор, молҳо, пардохтҳо ва боқимонда. Онро ба Telegram ё WhatsApp фиристодан ё дар телефон нигоҳ доштан мумкин аст.'],
     ['Қарзи кӯҳнаро чӣ тавр сабт мекунам?', 'Агар мизоҷ пеш аз барнома қарздор буд, дар бахши «Қарз» «Қарзи нав»-ро пахш кунед ва ном, телефон, маблағ ва санаро нависед. Ин қарз ба пули ин давра таъсир намекунад, чунки мол пештар дода шуда буд.'],
     ['Агар мизоҷ моли ба қарз гирифтаро баргардонад?', 'Фурӯшро дар «Амалиётҳо» кушоед ва «Бозгашт»-ро пахш кунед. Мол ба анбор бармегардад ва маблағи он аз қарзи мизоҷ худ аз худ кам мешавад.'],
     ['Ҳисоботро чӣ тавр мебинам?', 'Саҳифаи «Ҳисобот»-ро кушоед ва бахшро интихоб кунед: Умумӣ, Фурӯш, Фоида, Қарз, Хароҷот, Воридот ё Интиқол. Давраро интихоб кунед ё сана нависед. Бо тугмаи «Филтр» анбор, гурӯҳ, номи мол ва намуди хароҷотро интихоб кардан мумкин аст. Тугмаи CSV ҷадвалро ба файл мегирад.'],
-    ['Молро дигар намефурӯшам, вале таърихаш бояд монад', 'Молро кушоед, «Тағйир додан»-ро пахш кунед ва «Ба бойгонӣ гузоштан»-ро интихоб кунед. Мол аз рӯйхат пинҳон мешавад, вале таърихи фурӯш боқӣ мемонад.'],
-    ['Якчанд молро якбора чӣ тавр нест мекунам?', 'Дар саҳифаи «Молҳо» тугмаи «Интихоб»-ро пахш кунед ва молҳоро пахш карда қайд кунед. Дар поён «Ба бойгонӣ» ё «Нест кардан»-ро интихоб кунед. Як молро аз корти худи он ҳам нест кардан мумкин аст: молро кушоед ва «Нест кардан»-ро пахш кунед. Агар мол таърихи фурӯш дошта бошад, барнома бойгониро тавсия медиҳад, то ҳисобот вайрон нашавад.'],
-    ['Рӯйхати молҳоро ба Excel чӣ тавр мегирам?', 'Дар «Танзимот» «Рӯйхати молҳо — Excel»-ро пахш кунед. Барнома маълумоти тозаро аз ҷадвал мегирад ва файл месозад: акси мол, бақия дар ҳар анбор, ҳамагӣ, нархҳо, арзиш, фоидаи интизорӣ ва ҷамъ дар як варақ. Файл дар Excel, WPS ва Google Sheets кушода мешавад.'],
+    ['Молро дигар намефурӯшам, вале таърихаш бояд монад', 'Молро кушоед, «Тағйир додан»-ро пахш кунед ва «Ба бойгонӣ гузоштан»-ро интихоб кунед. Мол аз рӯйхат пинҳон мешавад, вале таърихи фурӯш мемонад.'],
+    ['Якчанд молро якбора чӣ тавр нест мекунам?', 'Дар саҳифаи «Молҳо» тугмаи «Интихоб»-ро пахш кунед ва молҳоро пахш карда қайд кунед. Дар поён «Ба бойгонӣ» ё «Нест кардан»-ро интихоб кунед. Як молро аз корти худи он ҳам нест кардан мумкин аст: молро кушоед ва «Нест кардан»-ро пахш кунед. Агар мол таърихи фурӯш дошта бошад, барнома бойгониро пешниҳод мекунад, то ҳисобот вайрон нашавад.'],
+    ['Рӯйхати молҳоро ба Excel чӣ тавр мегирам?', 'Дар «Танзимот» «Рӯйхати молҳо ба Excel»-ро пахш кунед. Барнома маълумоти навро аз ҷадвал мегирад ва файл месозад: акси мол, бақия дар ҳар анбор, ҳамагӣ, нархҳо, арзиш, фоидаи интизорӣ ва ҷамъ дар як варақ. Файл дар Excel, WPS ва Google Sheets кушода мешавад.'],
     ['Маълумот дар куҷо нигоҳ дошта мешавад?', 'Ҳама чиз дар ҷадвали Google нигоҳ дошта мешавад. Барнома маълумотро ҳар дақиқа ва ҳангоми кушодан нав мекунад. Агар дар ҷадвал чизеро дастӣ иваз кунед, он дар барнома низ пайдо мешавад. Ғайр аз ин, сервер ҳар рӯз нусхаи эҳтиётии ҷадвалро нигоҳ медорад.']
 ];
 
@@ -721,7 +725,7 @@ PAGES.set = {
                     ${S.sheet ? `<a class="set-item" href="https://docs.google.com/spreadsheets/d/${encodeURIComponent(S.sheet)}/edit" target="_blank" rel="noopener">
                         <span class="tile tone-sale">${ic('sheet', 18)}</span><span class="set-t"><b>Кушодани ҷадвал</b><small>${fmt(S.products.length)} мол · ${fmt(S.tx.length)} амалиёт · ${fmt(S.exp.length)} хароҷот</small></span><span class="btn sm t-sale">${ic('sheet', 14)}Кушодан</span></a>` : ''}
                     <button class="set-item" data-act="xlsx">
-                        <span class="tile tone-sale">${ic('download', 18)}</span><span class="set-t"><b>Рӯйхати молҳо — Excel</b><small>Акс, бақия дар ҳар анбор, нарх, арзиш ва ҷамъ · як варақ</small></span><span class="btn sm t-sale set-go">${ic('download', 14)}Боргирӣ</span></button>
+                        <span class="tile tone-sale">${ic('download', 18)}</span><span class="set-t"><b>Рӯйхати молҳо ба Excel</b><small>Акс, бақия дар ҳар анбор, нарх, арзиш ва ҷамъ · як варақ</small></span><span class="btn sm t-sale set-go">${ic('download', 14)}Боргирӣ</span></button>
                     ${item('sync', 'tone-buy', 'Навсозӣ', `Охирин бор: ${synced}`, 'sync', '', 'Нав кардан')}
                 </div>
 

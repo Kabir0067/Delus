@@ -2,9 +2,13 @@
   "name": "delus-tests",
   "private": true,
   "type": "module",
-  "description": "Санҷишҳои DELUS: браузер (Puppeteer) бо сервери воқеӣ ва API-и сохта; хондани файли Excel (ExcelJS)",
+  "description": "Санҷишҳои DELUS: ҷустуҷӯ, сабти сервер (/api/op), браузер (Puppeteer), кор бе интернет (service worker); хондани Excel (ExcelJS)",
   "scripts": {
-    "test": "node ui.test.mjs"
+    "test": "node search.test.mjs && node op.test.mjs && node ui.test.mjs && node offline.test.mjs",
+    "search": "node search.test.mjs",
+    "op": "node op.test.mjs",
+    "ui": "node ui.test.mjs",
+    "offline": "node offline.test.mjs"
   },
   "devDependencies": {
     "exceljs": "4.4.0",

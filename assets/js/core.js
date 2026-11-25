@@ -5,7 +5,7 @@
    Сохтори ҷадвал. Сутунҳо аз рӯи ном ёфта мешаванд, на аз рӯи ҷой.
    ------------------------------------------------------------------ */
 const COLS = {
-    Products: ['id', 'product_code', 'name', 'category', 'series', 'color', 'mesta', 'taga', 'unit', 'units_per_box', 'purchase_price', 'sale_price', 'image_url', 'description', 'status', 'created_at', 'min_stock'],
+    Products: ['id', 'product_code', 'name', 'category', 'series', 'color', 'mesta', 'taga', 'unit', 'units_per_box', 'purchase_price', 'sale_price', 'image_url', 'description', 'status', 'created_at', 'min_stock', 'barcode'],
     Locations: ['id', 'name', 'location_type', 'status'],
     Transactions: ['id', 'transaction_code', 'date', 'type', 'product_id', 'from_location_id', 'to_location_id', 'quantity', 'unit', 'base_quantity', 'unit_cost', 'unit_price', 'note', 'created_at', 'receipt_code'],
     Settings: ['key', 'value', 'note'],
@@ -16,7 +16,9 @@ const COLS = {
 };
 const DATE_COLS = new Set(['date', 'created_at', 'updated_at', 'due_date']);
 /* Браузер калиди Google надорад: ҳамаи дархостҳо тавассути сервери худи барнома мераванд. Варақи login ба браузер намерасад. */
-const RANGES = ['Products!A:Q', 'Locations!A:D', 'Transactions!A:O', 'Settings!A:C', 'Expenses!A:G', 'Debts!A:K', 'DebtPayments!A:G'];
+/* Сутунҳои иловагӣ: агар дар ҷадвал набошанд, огоҳӣ намеояд (барнома худаш илова мекунад) */
+const OPTIONAL_COLS = new Set(['Products.barcode']);
+const RANGES = ['Products!A:Z', 'Locations!A:D', 'Transactions!A:O', 'Settings!A:C', 'Expenses!A:G', 'Debts!A:K', 'DebtPayments!A:G'];
 const UNITS = ['дона', 'метр', 'кг', 'қуттӣ', 'ҷуфт', 'литр'];
 const TZ_HOURS = 5;          // Тоҷикистон: UTC+5, бе соати тобистона
 const PAGE_SIZE = 60;
@@ -25,10 +27,10 @@ const CELL_MAX = 45000;      // ҳуҷайраи Google Sheets то 50 000 ал�
 const NAV = [
     { k: 'home', icon: 'home', t: 'Асосӣ', s: '' },
     { k: 'prod', icon: 'tag', t: 'Молҳо', s: 'Рӯйхати борҳо, нарх ва акс' },
-    { k: 'stock', icon: 'box', t: 'Анбор', s: 'Молҳои мавҷуда дар анбор ва мағоза' },
+    { k: 'stock', icon: 'box', t: 'Анбор', s: 'Миқдори мол дар анбор ва мағоза' },
     { k: 'debt', icon: 'debt', t: 'Қарз', s: 'Насия: кӣ чанд қарздор аст' },
-    { k: 'tx', icon: 'list', t: 'Амалиётҳо', s: 'Таърихи фурӯш, воридот ва интиқол' },
-    { k: 'rep', icon: 'chart', t: 'Ҳисобот', s: 'Фурӯш, фоида, хароҷот ва воридот' },
+    { k: 'tx', icon: 'list', t: 'Амалиётҳо', s: 'Рӯйхати фурӯш, воридот ва интиқол' },
+    { k: 'rep', icon: 'chart', t: 'Ҳисобот', s: 'Натиҷаи фурӯш, фоида ва хароҷот' },
     { k: 'set', icon: 'gear', t: 'Танзимот', s: 'Анборҳо, парол ва намуди барнома' }
 ];
 
@@ -98,14 +100,127 @@ function todayLong() {
 }
 const timeOf = x => { const t = String(x.date || '').slice(11, 16); return t && t !== '00:00' ? t : ''; };
 
-/* ---------- ҷустуҷӯ: ҳарфҳои тоҷикӣ ва русӣ якхела ҳисоб мешаванд ---------- */
+/* ---------- ҷустуҷӯ ----------
+   Корбар номи молро чӣ хеле ки мешунавад, ҳамон хел менависад: «разетка», «виключател», «афтомат 16», «кабел 2,5», «razetka».
+   1. Ҳарфҳо ба як шакл меоянд: тоҷикӣ ва русӣ (қ→к, ӯ→у, ы→и, ь нест), лотинӣ ба кириллӣ (razetka → разетка).
+   2. Овозҳои наздик якхела ҳисоб мешаванд: о/а, е/и, д/т, з/с, б/п, в/ф, г/к (разедка = розетка).
+   3. Як-ду ҳарфи хато ё партофта бахшида мешавад (калимаи дароз — бештар).
+   4. Номҳои маъмул: «чароғ» лампа ва светильникро меёбад, «сим» — кабел ва провод, «калид» — выключатель.
+   Рақамҳо («16», «2.5») ҳамеша аниқ ҷустуҷӯ мешаванд: 16 ҳеҷ гоҳ 18-ро намеёбад. */
+const LAT2 = [['shch', 'щ'], ['sch', 'щ'], ['sh', 'ш'], ['ch', 'ч'], ['zh', 'ж'], ['kh', 'х'], ['gh', 'г'], ['ts', 'ц'], ['ya', 'я'], ['yu', 'ю'], ['yo', 'е'], ['ck', 'к']];
+const LAT1 = { a: 'а', b: 'б', c: 'к', d: 'д', e: 'е', f: 'ф', g: 'г', h: 'х', i: 'и', j: 'ж', k: 'к', l: 'л', m: 'м', n: 'н', o: 'о', p: 'п', q: 'к', r: 'р', s: 'с', t: 'т', u: 'у', v: 'в', w: 'в', x: 'х', y: 'и', z: 'з' };
 function norm(s) {
-    return String(s || '').toLowerCase()
-        .replace(/ё/g, 'е').replace(/ӯ/g, 'у').replace(/қ/g, 'к').replace(/ғ/g, 'г')
-        .replace(/ҳ/g, 'х').replace(/ҷ/g, 'ч').replace(/ӣ/g, 'и')
-        .replace(/[^0-9a-zЀ-ӿ]+/g, ' ').trim();
+    let v = String(s ?? '').toLowerCase();
+    if (/[a-z]/.test(v)) {
+        for (const [a, b] of LAT2) v = v.split(a).join(b);
+        v = v.replace(/[a-z]/g, c => LAT1[c]);
+    }
+    return v
+        .replace(/ё/g, 'е').replace(/ӯ/g, 'у').replace(/қ/g, 'к').replace(/ғ/g, 'г').replace(/ҳ/g, 'х').replace(/ҷ/g, 'ч').replace(/ӣ/g, 'и')
+        .replace(/[ыйі]/g, 'и').replace(/э/g, 'е').replace(/ю/g, 'у').replace(/я/g, 'а').replace(/[ьъ]/g, '')
+        .replace(/(\d)[.,](?=\d)/g, '$1d')
+        .replace(/[^0-9a-zа-яd]+/g, ' ').replace(/d/g, '.').trim();
 }
-const hasAll = (text, query) => { const h = norm(text); return norm(query).split(' ').every(t => h.includes(t)); };
+const SOUND = { о: 'а', е: 'и', д: 'т', з: 'с', б: 'п', в: 'ф', г: 'к', ж: 'ш', щ: 'ш', ц: 'с' };
+const skel = w => w.replace(/[оедзбвгжщц]/g, c => SOUND[c]).replace(/(.)\1+/g, '$1');
+const hasDigit = w => /\d/.test(w);
+
+/* Номҳои маъмул. Решаҳо: калима бо ин сар шавад кофист. */
+const SYN = [
+    ['ламп', 'светил', 'свет', 'чарог', 'чарок', 'люстр', 'прожект', 'бра', 'led', 'лед', 'панел', 'софит'],
+    ['розет', 'разет', 'розетк'],
+    ['виключ', 'выключ', 'калид', 'клавиш', 'тугма', 'переключ'],
+    ['кабел', 'провод', 'сим', 'шнур', 'ввг', 'пвс'],
+    ['автомат', 'афтомат', 'предохран', 'узо', 'дифавт', 'пробк'],
+    ['удлин', 'тройник', 'переноск', 'пилот', 'сетев'],
+    ['коробк', 'кутти', 'бокс', 'щит', 'щиток'],
+    ['бел', 'сафед', 'white', 'вайт'],
+    ['черн', 'сиех', 'сиах', 'black', 'блек'],
+    ['сер', 'хокистар', 'grey', 'gray', 'грей'],
+    ['золот', 'тилло', 'gold', 'голд']
+].map(g => [...new Set(g.map(x => skel(norm(x))))]);
+
+/* Масофаи таҳрир (бо ҷойивазкунии ду ҳарфи ҳамсоя), бо ҳадди max: зиёдтар бошад — max + 1 */
+function editDist(a, b, max) {
+    if (Math.abs(a.length - b.length) > max) return max + 1;
+    const m = a.length, n = b.length;
+    let pp = null, p = Array.from({ length: n + 1 }, (_, j) => j);
+    for (let i = 1; i <= m; i++) {
+        const c = [i];
+        let low = i;
+        for (let j = 1; j <= n; j++) {
+            let v = Math.min(p[j] + 1, c[j - 1] + 1, p[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+            if (pp && i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) v = Math.min(v, pp[j - 2] + 1);
+            c.push(v);
+            if (v < low) low = v;
+        }
+        if (low > max) return max + 1;
+        pp = p; p = c;
+    }
+    return p[n];
+}
+const typos = len => len >= 8 ? 2 : len >= 5 ? 1 : 0;
+
+/* Матн барои ҷустуҷӯ ба калимаҳо тақсим мешавад ва нигоҳ дошта мешавад (ҳар ҳарф як бор коркард мешавад, на ҳар бор ҳангоми навиштан) */
+const SEARCH_IX = new Map();
+function searchIndex(text) {
+    let ix = SEARCH_IX.get(text);
+    if (ix) return ix;
+    const words = norm(text).split(' ').filter(Boolean);
+    ix = { words, sk: words.map(skel), first: words[0] || '' };
+    if (SEARCH_IX.size > 5000) SEARCH_IX.clear();
+    SEARCH_IX.set(text, ix);
+    return ix;
+}
+
+/* [баҳо, суст]. Баҳо 0 — мувофиқ нест: ҳар калимаи ҷустуҷӯ бояд дар матн бошад.
+   «Суст» — ягон калима танҳо бо хатои имло ё номи маъмул ёфт шуд. */
+function matchInfo(text, query) {
+    const q = norm(query).split(' ').filter(Boolean);
+    if (!q.length) return [1, false];
+    const ix = searchIndex(text);
+    let score = 0, weak = false;
+    for (let k = 0; k < q.length; k++) {
+        const t = q[k];
+        let best = 0;
+        if (hasDigit(t)) {
+            for (const w of ix.words) if (w.includes(t)) { best = w === t || w.startsWith(t) ? 6 : 4; if (best === 6) break; }
+        } else {
+            const ts = skel(t), max = typos(ts.length);
+            for (let i = 0; i < ix.words.length && best < 6; i++) {
+                const w = ix.words[i], ws = ix.sk[i];
+                if (w.startsWith(t)) best = Math.max(best, w === t ? 6 : 5);
+                else if (ws.startsWith(ts)) best = Math.max(best, 4);
+                else if (t.length >= 4 && w.includes(t)) best = Math.max(best, 3);
+                else if (max && ws.length >= ts.length) {
+                    const d = Math.min(editDist(ts, ws.slice(0, ts.length), max), editDist(ts, ws.slice(0, ts.length + 1), max), editDist(ts, ws.slice(0, Math.max(1, ts.length - 1)), max));
+                    if (d <= max) best = Math.max(best, d === 1 ? 2.5 : 2);
+                }
+            }
+            if (!best && ts.length >= 3) {
+                const g = SYN.find(list => list.some(s => ts.startsWith(s) || (s.startsWith(ts) && ts.length >= 3)));
+                if (g && ix.sk.some(ws => g.some(s => ws.startsWith(s)))) best = 1.5;
+            }
+        }
+        if (!best) return [0, true];
+        if (best < 3) weak = true;
+        score += best;
+    }
+    if (ix.first.startsWith(q[0])) score += 3;
+    return [score, weak];
+}
+const matchScore = (text, query) => matchInfo(text, query)[0];
+const hasAll = (text, query) => matchScore(text, query) > 0;
+/* Ҳама чизе, ки мол бо он ёфт мешавад */
+const prodText = p => [p.name, p.product_code, p.category, p.series, p.color, p.description, p.barcode].filter(x => x !== undefined && x !== '').join(' ');
+/* Рӯйхат бо ҷустуҷӯ: беҳтарин мувофиқат аввал.
+   Агар моли аниқ ёфт шавад, мувофиқатҳои суст (хатои имло, номи маъмул) нишон дода намешаванд:
+   «прожектор» танҳо прожекторро медиҳад, «чароғ» бошад (ки дар номҳо нест) ҳамаи лампаҳоро. */
+function rankBy(list, text, q, boost) {
+    let hits = list.map(x => { const [s, weak] = matchInfo(text(x), q); return { x, s: s + (boost ? boost(x) : 0), weak }; }).filter(h => h.s > 0);
+    if (hits.some(h => !h.weak)) hits = hits.filter(h => !h.weak);
+    return hits.sort((a, b) => b.s - a.s).map(h => h.x);
+}
 
 /* ==================================================================
    ПАЙВАСТ БО GOOGLE SHEETS
@@ -342,9 +457,10 @@ function reindex() {
 
 /* ---------- қарз: боқимонда ҳамеша аз пардохтҳо ҳисоб мешавад ---------- */
 const MONEY_EPS = 0.005;
+const nameKey = s => String(s || '').toLowerCase().replace(/ё/g, 'е').replace(/ӯ/g, 'у').replace(/қ/g, 'к').replace(/ғ/g, 'г').replace(/ҳ/g, 'х').replace(/ҷ/g, 'ч').replace(/ӣ/g, 'и').replace(/[^0-9a-zЀ-ӿ]+/g, ' ').trim();
 const custKey = (name, phone) => {
     const digits = String(phone || '').replace(/\D/g, '').slice(-9);
-    return digits.length >= 7 ? 'p' + digits : 'n' + norm(name);
+    return digits.length >= 7 ? 'p' + digits : 'n' + nameKey(name);
 };
 function reindexDebts() {
     const paid = new Map();
@@ -376,6 +492,190 @@ const custBy = key => I.cust.get(key);
 const debtOfReceipt = rc => rc ? S.debts.find(d => d.receipt_code === rc) : null;
 const isCash = p => String(p.method || 'CASH').toUpperCase() !== 'RETURN';
 
+/* ==================================================================
+   НАВБАТИ САБТ
+   Фурӯш, воридот, интиқол, шумориш, бозгашт, хароҷот, қарз ва пардохт аввал дар худи телефон сабт мешаванд
+   ва дарҳол дар экран пайдо мешаванд. Баъд навбат ба навбат ба сервер мераванд (/api/op).
+   - Интернет набошад, навбат дар хотираи телефон (IndexedDB) мемонад ва худаш баъдтар меравад.
+   - Агар ҷавоби сервер нарасад ва ҳамон сабт боз равад, сервер онро аз рӯи рақамаш мешиносад ва ду бор наменависад.
+   Сабти навбат рақами муваққатӣ дорад («q:…»). Пас аз фиристодан рақами воқеии ҷадвалро мегирад.
+   ================================================================== */
+const Q = { list: [], busy: null, timer: 0, wait: 0 };
+const isQueued = id => String(id ?? '').startsWith('q:');
+const showCode = c => isQueued(c) ? 'дар навбат' : c;
+const QUEUED_MSG = 'Ин сабт ҳанӯз ба ҷадвал нарафтааст. Пас аз фиристодан тағйир додан мумкин аст.';
+const qWaiting = () => Q.list.filter(j => j.state === 'wait' || j.state === 'send');
+const qFailed = () => Q.list.filter(j => j.state === 'fail');
+const saveQueue = () => Local.set('kv', 'queue', Q.list);
+function qid() {
+    const a = new Uint8Array(12);
+    crypto.getRandomValues(a);
+    return [...a].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+const jobOf = id => Q.list.find(j => j.id === String(id).split(':')[1]);
+/* Рақами воқеии қарзе, ки дар кори дигари навбат сохта шуд */
+function realDebtId(id) {
+    if (!isQueued(id)) return id;
+    const j = jobOf(id);
+    return j && j.res ? j.res.debt : id;
+}
+
+/* Сабтҳои навбат ба маълумоти ҷадвал илова мешаванд (пас аз ҳар хондан аз ҷадвал низ) */
+function applyJob(j) {
+    const r = j.res, t = `q:${j.id}:`;
+    const rc = r ? r.receipt : (j.op.receipt ? t + 'r' : '');
+    const debtId = j.op.debt ? (r ? r.debt : t + 'd') : '';
+    j.op.tx.forEach((x, i) => S.tx.push({
+        ...x, id: r ? r.tx + i : t + i, transaction_code: r ? 'TR-' + pad5(r.tx + i) : '', base_quantity: x.quantity,
+        receipt_code: x.receipt_code || rc, _q: j.id
+    }));
+    if (j.op.debt) S.debts.push({ ...j.op.debt, id: debtId, receipt_code: j.op.debt.receipt_code || rc, paid: 0, status: 'OPEN', _q: j.id });
+    j.op.pays.forEach((x, i) => S.pays.push({ ...x, id: r ? r.pays + i : t + 'p' + i, debt_id: x.debt_id === '$debt' ? debtId : realDebtId(x.debt_id), _q: j.id }));
+    if (j.op.exp) S.exp.push({ ...j.op.exp, id: r ? r.exp : t + 'e', _q: j.id });
+    j.op.prices.forEach(u => {
+        const p = S.products.find(x => String(x.id) === String(u.id));
+        if (p) Object.assign(p, { purchase_price: u.purchase_price, sale_price: u.sale_price });
+    });
+}
+const dropJob = j => {
+    const own = x => x._q !== j.id;
+    S.tx = S.tx.filter(own); S.debts = S.debts.filter(own); S.pays = S.pays.filter(own); S.exp = S.exp.filter(own);
+};
+/* Пас аз фиристодан сабтҳои муваққатӣ бо рақамҳои воқеӣ иваз мешаванд */
+function settleJob(j) {
+    dropJob(j);
+    applyJob(j);
+    /* пардохтҳои кори дигар, ки ба қарзи ҳамин кор пайваст буданд */
+    for (const p of S.pays) if (isQueued(p.debt_id)) p.debt_id = realDebtId(p.debt_id);
+    S.seq++;
+    reindex();
+}
+
+/* Сабти нав ба навбат. label — барои паём, агар фиристодан нашавад. */
+function queueOp(label, op) {
+    const j = {
+        id: qid(), at: Date.now(), label, state: 'wait', tries: 0, err: '',
+        op: { tx: op.tx || [], receipt: !!op.receipt, debt: op.debt || null, pays: op.pays || [], exp: op.exp || null, prices: op.prices || [] }
+    };
+    Q.list.push(j);
+    saveQueue();
+    applyJob(j);
+    S.seq++;
+    reindex();
+    refresh();
+    drawBanner();
+    flush();
+    return j;
+}
+
+/* Сабти навбатро бекор кардан (танҳо то фиристодан) */
+function cancelJob(id) {
+    const j = Q.list.find(x => x.id === id);
+    if (!j || j.state === 'send' || j.state === 'done') return false;
+    Q.list = Q.list.filter(x => x !== j);
+    saveQueue();
+    dropJob(j);
+    S.seq++;
+    reindex();
+    refresh();
+    drawBanner();
+    syncSoon();
+    return true;
+}
+function retryJob(id) {
+    const j = Q.list.find(x => x.id === id);
+    if (j && j.state === 'fail') { j.state = 'wait'; j.err = ''; saveQueue(); }
+    Q.wait = 0;
+    drawBanner();
+    return flush();
+}
+
+/* Маълумот барои сервер: санаҳо ба рақами Google мегарданд, қарзи кори дигар бо рақами воқеиаш */
+function wireOp(j) {
+    const cells = rec => Object.fromEntries(Object.entries(rec).filter(([k]) => !k.startsWith('_')).map(([k, v]) => [k, toCell(k, v)]));
+    const pays = j.op.pays.map(p => {
+        let d = p.debt_id;
+        if (isQueued(d)) {
+            const dep = jobOf(d);
+            if (!dep || dep.state === 'fail') throw known('Қарзе, ки ин пардохт ба он аст, сабт нашудааст.');
+            if (!dep.res) return null;
+            d = dep.res.debt;
+        }
+        return { ...cells(p), debt_id: d };
+    });
+    if (pays.includes(null)) return null;
+    return {
+        id: j.id, receipt: j.op.receipt, tx: j.op.tx.map(cells), debt: j.op.debt && cells(j.op.debt), pays,
+        exp: j.op.exp && cells(j.op.exp), prices: j.op.prices
+    };
+}
+
+async function opCall(body) {
+    let r;
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 45000);
+    try {
+        r = await fetch(CONFIG.api + '/op', {
+            method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ctl.signal
+        });
+    } catch (e) { throw Object.assign(new Error(MSG.net), { net: true }); }
+    finally { clearTimeout(timer); }
+    if (NO_API.has(r.status) && !/json/.test(r.headers.get('content-type') || '')) throw Object.assign(new Error(MSG.noServer), { server: true });
+    const j = await r.json().catch(() => ({}));
+    const text = typeof j.error === 'string' && j.error !== 'server' ? j.error : MSG.fail;
+    if (r.status === 401) throw Object.assign(new Error(text), { auth: true });
+    if (r.status === 400) throw Object.assign(new Error(text), { permanent: true });
+    if (!r.ok || !j.ok) throw new Error(text);
+    return j;
+}
+
+/* Фиристодан навбат ба навбат. Хатои интернет — боз кӯшиш баъд аз 3, 6, 12 … то 60 сония. */
+function flush() {
+    if (Q.busy) return Q.busy;
+    if (!S.user || !Q.list.some(j => j.state === 'wait')) return Promise.resolve();
+    clearTimeout(Q.timer);
+    Q.busy = (async () => {
+        for (; ;) {
+            const j = Q.list.find(x => x.state === 'wait');
+            if (!j || !S.user) break;
+            let body;
+            try { body = wireOp(j); } catch (e) { j.state = 'fail'; j.err = errText(e); saveQueue(); continue; }
+            if (!body) { j.state = 'fail'; j.err = 'Қарзе, ки ин пардохт ба он аст, ҳанӯз сабт нашудааст.'; saveQueue(); continue; }
+            j.state = 'send';
+            S.seq++;
+            try {
+                j.res = await opCall(body);
+                j.state = 'done';
+                j.doneAt = Date.now();
+                j.err = '';
+                Q.wait = 0;
+                saveQueue();
+                settleJob(j);
+                if (S.offline) setOffline(false);
+                refresh();
+            } catch (e) {
+                j.err = e.message;
+                if (e.permanent) { j.state = 'fail'; saveQueue(); refresh(); continue; }
+                j.state = 'wait';
+                j.tries++;
+                saveQueue();
+                if (e.auth) { logout('Вақти воридшавӣ гузашт. Аз нав ворид шавед. Сабтҳои дар навбат буда гум намешаванд.'); break; }
+                if (e.net || e.server) setOffline(e.server ? 'server' : true);
+                Q.wait = Math.min(60000, Q.wait ? Q.wait * 2 : 3000);
+                Q.timer = setTimeout(flush, Q.wait);
+                break;
+            } finally { S.seq++; }
+        }
+    })().catch(e => console.error(e)).finally(() => { Q.busy = null; drawBanner(); if (!Q.wait) syncSoon(800); });
+    return Q.busy;
+}
+
+async function loadQueue() {
+    const list = await Local.get('kv', 'queue');
+    Q.list = Array.isArray(list) ? list : [];
+    /* сабте, ки ҳангоми бастани барнома фиристода мешуд, боз меравад: сервер онро ду бор наменависад */
+    Q.list.forEach(j => { if (j.state === 'send') j.state = 'wait'; });
+}
+
 function applyData([p, l, t, c, e, d, dp]) {
     S.debts = parseTable('Debts', d || []);
     S.pays = parseTable('DebtPayments', dp || []);
@@ -387,7 +687,9 @@ function applyData([p, l, t, c, e, d, dp]) {
     const cfg = { low_stock_default: 10, company_name: 'DELUS', currency: 'сомонӣ' };
     (c || []).slice(1).forEach(r => { if (r[0] !== '' && r[0] !== undefined) cfg[String(r[0]).trim()] = r[1] ?? ''; });
     S.cfg = cfg;
-    S.schema = ['Products', 'Locations', 'Transactions'].flatMap(s => COLS[s].filter(k => !S.heads[s].includes(k)).map(k => `${s}.${k}`));
+    S.schema = ['Products', 'Locations', 'Transactions'].flatMap(s => COLS[s].filter(k => !S.heads[s].includes(k) && !OPTIONAL_COLS.has(`${s}.${k}`)).map(k => `${s}.${k}`));
+    Q.list.forEach(applyJob);
+    for (const x of S.pays) if (isQueued(x.debt_id)) x.debt_id = realDebtId(x.debt_id);
     reindex();
 }
 
@@ -399,11 +701,15 @@ function sync() {
         const btn = $('#syncBtn');
         if (btn) btn.classList.add('spin');
         try {
-            for (let i = 0; i < 3; i++) {
-                const seq = S.seq;
+            for (let i = 0; i < 4; i++) {
+                if (Q.busy) await Q.busy;
+                const seq = S.seq, started = Date.now();
                 const data = await DB.batchGet(RANGES);
                 if (seq !== S.seq) continue;
-                const sig = JSON.stringify(data);
+                /* корҳое, ки пеш аз ин хондан фиристода шуданд, акнун дар худи ҷадвал ҳастанд */
+                const seen = Q.list.filter(j => j.state === 'done' && j.doneAt < started);
+                if (seen.length) { Q.list = Q.list.filter(j => !seen.includes(j)); saveQueue(); }
+                const sig = JSON.stringify(data) + '|' + Q.list.map(j => j.id + j.state).join(',');
                 if (sig !== S.sig) {
                     S.sig = sig;
                     applyData(data);
@@ -415,6 +721,8 @@ function sync() {
             }
             S.syncedAt = Date.now();
             setOffline(false);
+            ensureBarcodeCol();
+            if (Q.list.some(j => j.state === 'wait')) flush();
         } catch (e) {
             console.error(e);
             if (e.message === MSG.net || e.message === MSG.noServer) setOffline(e.message === MSG.noServer ? 'server' : true);
@@ -428,46 +736,63 @@ function sync() {
 }
 const syncQuiet = () => sync().catch(() => { });
 let syncTimer = 0;
-function syncSoon() { clearTimeout(syncTimer); syncTimer = setTimeout(syncQuiet, 1500); }
+function syncSoon(ms = 1500) { clearTimeout(syncTimer); syncTimer = setTimeout(syncQuiet, ms); }
+
+/* Сутуни штрихкод дар варақи Products: агар нест, барнома худаш дар охири сарлавҳа илова мекунад */
+let barcodeJob = null;
+function ensureBarcodeCol() {
+    const h = S.heads.Products;
+    if (!h || !h.length || h.includes('barcode')) return Promise.resolve();
+    return barcodeJob = barcodeJob || addBarcodeCol().finally(() => { barcodeJob = null; });
+}
+async function addBarcodeCol() {
+    try {
+        const [row] = await DB.get('Products!1:1');
+        const cells = (row || []).map(v => String(v).trim());
+        if (cells.includes('barcode')) return;
+        let n = cells.length;
+        while (n > 0 && !cells[n - 1]) n--;
+        await DB.setRanges([{ range: `Products!${colName(n)}1`, values: [['barcode']] }]);
+        S.heads.Products = [...cells.slice(0, n), 'barcode'];
+        syncSoon(300);
+    } catch (e) { console.error(e); }
+}
 
 function setOffline(v) {
+    if (S.offline === v) return;
     S.offline = v;
     drawBanner();
 }
 function drawBanner() {
     const b = $('#banner');
+    const wait = qWaiting().length, failed = qFailed();
+    const sb = $('#syncBtn');
+    if (sb) {
+        let n = $('.sync-n', sb);
+        if (wait && !n) { n = document.createElement('b'); n.className = 'sync-n'; sb.append(n); }
+        if (n) { if (wait) n.textContent = wait; else n.remove(); }
+        sb.title = wait ? `${wait} сабт ҳанӯз ба ҷадвал нарафтааст` : 'Навсозӣ';
+    }
     if (!b) return;
     const items = [];
-    if (S.offline === 'server') items.push(`<div class="note bad">${ic('warn', 16)}<span>${esc(MSG.noServer)}</span></div>`);
-    else if (S.offline) items.push(`<div class="offline">${ic('warn', 16)}<span>Пайваст нест. Маълумоти охирин нишон дода мешавад, сабти нав ҳоло имкон надорад.</span></div>`);
+    const kept = wait ? ` ${fmt(wait)} сабт дар телефон нигоҳ дошта шуд ва худаш ба ҷадвал меравад.` : '';
+    if (S.offline === 'server') items.push(`<div class="note bad">${ic('warn', 16)}<span>${esc(MSG.noServer)}${esc(kept)}</span></div>`);
+    else if (S.offline) items.push(`<div class="offline">${ic('warn', 16)}<span>Интернет нест. Маълумоти охирин нишон дода мешавад.${esc(kept)}</span></div>`);
+    else if (wait && Q.wait) items.push(`<div class="note warn">${ic('sync', 16)}<span>${fmt(wait)} сабт ҳанӯз нарафт. Барнома худаш боз мефиристад. <button class="link" data-act="qRetry">Ҳозир фиристодан</button></span></div>`);
+    for (const j of failed) items.push(`<div class="note bad">${ic('warn', 16)}<span><b>Сабт нашуд: ${esc(j.label)}.</b> ${esc(j.err)}
+        <span class="note-a"><button class="btn sm" data-act="qRetry" data-id="${esc(j.id)}">Боз кӯшиш</button><button class="btn sm danger" data-act="qDrop" data-id="${esc(j.id)}">Нест кардан</button></span></span></div>`);
     if (S.schema.length) items.push(`<div class="note bad">${ic('warn', 16)}<span>Дар ҷадвал ин сутунҳо нестанд: ${esc(S.schema.join(', '))}</span></div>`);
     b.innerHTML = items.join('');
 }
 
 /* ==================================================================
-   САБТ ДАР ҶАДВАЛ
+   САБТИ ДИГАР ДАР ҶАДВАЛ (мол, ҷой, танзимот, тағйир ва нест кардан): бо интернет
    ================================================================== */
 const wrote = () => { S.seq++; reindex(); refresh(); syncSoon(); };
-
-/* Як ё якчанд сатри амалиёт. Дар ду дастгоҳ якбора сабт шавад ҳам, рақамҳо такрор намемонанд. */
-async function addTx(lines, { receipt = false } = {}) {
-    const first = await nextIdOf('Transactions', S.tx, lines.length);
-    const rc = receipt ? 'R-' + pad5(first) : '';
-    const recs = lines.map((l, i) => ({
-        ...l,
-        id: first + i,
-        transaction_code: 'TR-' + pad5(first + i),
-        base_quantity: l.quantity,
-        created_at: nowStr(),
-        receipt_code: l.receipt_code || rc
-    }));
-    await DB.append('Transactions', recs.map(r => toRow('Transactions', r)));
-    S.tx.push(...recs);
-    wrote();
-    return recs;
-}
+const notQueued = x => { if (isQueued(x.id)) { flush(); throw known(QUEUED_MSG); } };
 
 async function updateTx(x, changes) {
+    notQueued(x);
     const [row] = await DB.locate('Transactions', 'id', x.id);
     if (!row) throw known('Ин амалиёт дар ҷадвал ёфт нашуд. Навсозӣ кунед.');
     await DB.setFields('Transactions', row, changes);
@@ -476,6 +801,7 @@ async function updateTx(x, changes) {
 }
 
 async function deleteTx(x) {
+    notQueued(x);
     const rows = await DB.locate('Transactions', 'id', x.id);
     await DB.deleteRows({ Transactions: rows });
     S.tx = S.tx.filter(t => String(t.id) !== String(x.id));
@@ -514,6 +840,7 @@ const deleteProduct = p => deleteProducts([p]);
 async function deleteProducts(list) {
     const ids = new Set(list.map(p => String(p.id)));
     if (!ids.size) return;
+    if (S.tx.some(t => t._q && ids.has(String(t.product_id)))) { flush(); throw known('Ин мол сабти ба ҷадвал нарафта дорад. Пас аз фиристодани он нест кунед.'); }
     const col = (sheet, field) => { const c = colName(head(sheet).indexOf(field)); return `${sheet}!${c}:${c}`; };
     const [pr, tr, im] = await DB.batchGet([col('Products', 'id'), col('Transactions', 'product_id'), col('Images', 'product_id')]);
     const rowsOf = rows => rows.map((r, i) => i > 0 && ids.has(String(r[0] ?? '').trim()) ? i + 1 : 0).filter(Boolean);
@@ -548,20 +875,19 @@ async function setSetting(key, value, note) {
 
 async function saveExpense(e, rec) {
     if (e) {
+        notQueued(e);
         const [row] = await DB.locate('Expenses', 'id', e.id);
         if (!row) throw known('Ин хароҷот дар ҷадвал ёфт нашуд. Навсозӣ кунед.');
         await DB.setFields('Expenses', row, rec);
         Object.assign(S.exp.find(x => String(x.id) === String(e.id)) || e, rec);
+        wrote();
     } else {
-        const id = await nextIdOf('Expenses', S.exp);
-        const full = { ...rec, id, created_at: nowStr() };
-        await DB.append('Expenses', [toRow('Expenses', full)]);
-        S.exp.push(full);
+        queueOp(`Хароҷот ${money(rec.amount)}`, { exp: { ...rec, created_at: nowStr() } });
     }
-    wrote();
 }
 
 async function deleteExpense(e) {
+    notQueued(e);
     await DB.deleteRows({ Expenses: await DB.locate('Expenses', 'id', e.id) });
     S.exp = S.exp.filter(x => String(x.id) !== String(e.id));
     wrote();
@@ -591,16 +917,14 @@ async function syncDebtRows(ids) {
     await DB.setRanges(data);
 }
 
-async function addDebt(rec) {
-    const id = await nextIdOf('Debts', S.debts);
-    const d = { status: 'OPEN', paid: 0, note: '', receipt_code: '', due_date: '', ...rec, id, created_at: nowStr() };
-    await DB.append('Debts', [toRow('Debts', d)]);
-    S.debts.push(d);
-    wrote();
-    return d;
+/* Қарзи дастӣ (масалан, қарзи кӯҳна) */
+function addDebt(rec) {
+    const j = queueOp(`Қарзи ${rec.customer}`, { debt: { status: 'OPEN', paid: 0, note: '', receipt_code: '', due_date: '', ...rec, created_at: nowStr() } });
+    return S.debts.find(d => d._q === j.id);
 }
 
 async function updateDebt(d, changes) {
+    notQueued(d);
     const [row] = await DB.locate('Debts', 'id', d.id);
     if (!row) throw known('Ин қарз дар ҷадвал ёфт нашуд. Навсозӣ кунед.');
     await DB.setFields('Debts', row, changes);
@@ -611,6 +935,8 @@ async function updateDebt(d, changes) {
 }
 
 async function deleteDebt(d) {
+    notQueued(d);
+    if (S.pays.some(p => String(p.debt_id) === String(d.id) && isQueued(p.id))) { flush(); throw known(QUEUED_MSG); }
     const [dr, pr] = await Promise.all([DB.locate('Debts', 'id', d.id), DB.locate('DebtPayments', 'debt_id', d.id)]);
     await DB.deleteRows({ DebtPayments: pr, Debts: dr });
     S.debts = S.debts.filter(x => String(x.id) !== String(d.id));
@@ -618,20 +944,8 @@ async function deleteDebt(d) {
     wrote();
 }
 
-/* Пардохтҳо: якчанд сатр якбора; баъд ҳолати қарзҳо нав мешавад */
-async function addPayments(list) {
-    if (!list.length) return [];
-    const first = await nextIdOf('DebtPayments', S.pays);
-    const recs = list.map((p, i) => ({ method: 'CASH', note: '', date: nowStr(), ...p, id: first + i, created_at: nowStr() }));
-    await DB.append('DebtPayments', recs.map(r => toRow('DebtPayments', r)));
-    S.pays.push(...recs);
-    await syncDebtRows(recs.map(r => r.debt_id));
-    wrote();
-    return recs;
-}
-
 /* Пардохти мизоҷ ба қарзҳои кушодаи ӯ аз кӯҳнатарин сар карда тақсим мешавад */
-async function payCustomer(c, amount, { method = 'CASH', note = '', date = nowStr() } = {}) {
+function payCustomer(c, amount, { method = 'CASH', note = '', date = nowStr() } = {}) {
     let rest = Math.round(num(amount) * 100) / 100;
     const open = c.debts.filter(d => !d._closed);
     const total = open.reduce((s, d) => s + d._left, 0);
@@ -644,10 +958,12 @@ async function payCustomer(c, amount, { method = 'CASH', note = '', date = nowSt
         list.push({ debt_id: d.id, amount: Math.round(part * 100) / 100, method, note, date });
         rest = Math.round((rest - part) * 100) / 100;
     }
-    return addPayments(list);
+    queueOp(`Пардохти ${c.name} ${money(amount)}`, { pays: list.map(p => ({ ...p, created_at: nowStr() })) });
+    return list;
 }
 
 async function deletePayment(p) {
+    notQueued(p);
     await DB.deleteRows({ DebtPayments: await DB.locate('DebtPayments', 'id', p.id) });
     S.pays = S.pays.filter(x => String(x.id) !== String(p.id));
     await syncDebtRows([p.debt_id]);
@@ -748,12 +1064,13 @@ function paintImage(p) {
 }
 
 /* Моли бе акс тасвири навъи худро мегирад */
+/* калимаҳо пас аз norm(): «выключатель» → «виключател», «LED» → «лед», «люстра» → «лустра» */
 const ART = [
-    [/автомат|предохран|дифавтомат|узо/, 'breaker', 'green'],
-    [/розет|удлин|сетев|вилк/, 'socket', 'blue'],
-    [/выключ|переключ|клавиш/, 'switch', 'violet'],
-    [/кабел|провод|шнур|сим/, 'cable', 'amber'],
-    [/светил|ламп|led|прожект|люстр|чарог/, 'bulb', 'amber']
+    [/автомат|предохран|узо/, 'breaker', 'green'],
+    [/розет|разет|удлин|сетев|вилк/, 'socket', 'blue'],
+    [/виключ|переключ|клавиш|калид/, 'switch', 'violet'],
+    [/кабел|провод|шнур|сим/, 'cable', 'amber'],
+    [/светил|ламп|лед|прожект|лустр|чарог/, 'bulb', 'amber']
 ];
 function artOf(p) {
     const name = norm(p.name), cat = norm(p.category);

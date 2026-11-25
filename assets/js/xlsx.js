@@ -156,7 +156,7 @@ XL.products = () => {
     const lowCount = data.filter(d => d.on && d.st !== 'ok').length;
 
     /* 1–3: сарлавҳа ва хати тиллоӣ */
-    row(1, 36, [XL.str(0, 1, `${S.cfg.company_name || 'DELUS'} — рӯйхати пурраи молҳо`, Y.title), ...fill(1, 1, last, Y.title)]);
+    row(1, 36, [XL.str(0, 1, `${S.cfg.company_name || 'DELUS'}: рӯйхати пурраи молҳо`, Y.title), ...fill(1, 1, last, Y.title)]);
     span(1, 0, last);
     row(2, 18, [XL.str(0, 2, `Ҳолат ба ${dateLong(today())}, соати ${nowStr().slice(11, 16)} · маълумот ҳамин лаҳза аз ҷадвал гирифта шуд · ${fmt(prods.length)} мол, ${fmt(L)} анбор`, Y.sub), ...fill(2, 1, last, Y.sub)]);
     span(2, 0, last);
@@ -279,7 +279,7 @@ ${media.length ? '<Override PartName="/xl/drawings/drawing1.xml" ContentType="ap
 <Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>
 </Types>` },
         { name: '_rels/.rels', data: rels([['rId1', R + 'officeDocument', 'xl/workbook.xml'], ['rId2', 'http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties', 'docProps/core.xml'], ['rId3', R + 'extended-properties', 'docProps/app.xml']]) },
-        { name: 'docProps/core.xml', data: XL.head + `<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${XL.x((S.cfg.company_name || 'DELUS') + ' — рӯйхати молҳо')}</dc:title><dc:creator>DELUS</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${new Date().toISOString().slice(0, 19)}Z</dcterms:created></cp:coreProperties>` },
+        { name: 'docProps/core.xml', data: XL.head + `<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${XL.x((S.cfg.company_name || 'DELUS') + ': рӯйхати молҳо')}</dc:title><dc:creator>DELUS</dc:creator><dcterms:created xsi:type="dcterms:W3CDTF">${new Date().toISOString().slice(0, 19)}Z</dcterms:created></cp:coreProperties>` },
         { name: 'docProps/app.xml', data: XL.head + '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>DELUS</Application></Properties>' },
         { name: 'xl/workbook.xml', data: XL.head + `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
 <bookViews><workbookView activeTab="0"/></bookViews>

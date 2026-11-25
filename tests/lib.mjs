@@ -9,6 +9,9 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import puppeteer from 'puppeteer-core';
+import { createRequire } from 'node:module';
+import { sheetsApi } from './fakegoogle.mjs';
+const { createOps } = createRequire(import.meta.url)('../server/ops.js');
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const OUT = path.join(ROOT, 'tests', 'out');
@@ -20,9 +23,9 @@ export const CHROME = process.env.CHROME || [
     '/usr/bin/google-chrome', '/usr/bin/chromium', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 ].find(p => fs.existsSync(p));
 
-export async function serve(port) {
+export async function serve(port, env = {}) {
     const child = spawn(process.execPath, [path.join(ROOT, 'server', 'server.js')], {
-        env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', BACKUP: 'off', DATA_DIR: path.join(OUT, 'server-data') },
+        env: { ...process.env, PORT: String(port), HOST: '127.0.0.1', BACKUP: 'off', DATA_DIR: path.join(OUT, 'server-data'), ...env },
         stdio: ['ignore', 'pipe', 'pipe']
     });
     const log = [];
@@ -35,40 +38,40 @@ export async function serve(port) {
     return { url: `http://127.0.0.1:${port}/`, close: () => child.kill(), log: () => log.join('') };
 }
 
-export const launch = () => puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--no-sandbox', '--disable-gpu', '--lang=tg'] });
+export const launch = (extra = []) => puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--no-sandbox', '--disable-gpu', '--lang=tg', ...extra] });
 
 export function watch(page, errors) {
     page.on('pageerror', e => errors.push('PAGEERROR ' + e.message));
     page.on('console', m => { if (m.type() === 'error' && !/favicon|status of 40[13]/.test(m.text())) errors.push('CONSOLE ' + m.text().slice(0, 240)); });
 }
 
-/* ---------- ҷадвали сохта ---------- */
-const letters = s => [...s.toUpperCase()].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0) - 1;
-function parseRange(range) {
-    const [sheetRaw, part = ''] = decodeURIComponent(range).split('!');
-    const sheet = sheetRaw.replace(/^'|'$/g, '');
-    const m = /^([A-Z]+)?(\d+)?(?::([A-Z]+)?(\d+)?)?$/i.exec(part);
-    if (!part || !m) return { sheet, c0: 0, c1: 999, r0: 0, r1: Infinity };
-    const c0 = m[1] ? letters(m[1]) : 0, r0 = m[2] ? +m[2] - 1 : 0;
-    const single = m[3] === undefined && m[4] === undefined;
-    const c1 = single ? c0 : (m[3] ? letters(m[3]) : 999), r1 = single ? (m[2] ? r0 : Infinity) : (m[4] ? +m[4] - 1 : Infinity);
-    return { sheet, c0, c1, r0, r1 };
-}
-
+/* ---------- ҷадвали сохта ----------
+   /api/sheets ва /api/ids дар ин ҷо ҷавоб дода мешаванд, /api/op бошад бо худи server/ops.js-и воқеӣ иҷро мешавад,
+   то санҷиш ҳамон коди серверро санҷад (рақамҳо, сабти якбора, такрор нашудан).
+   ctl.op: { fail: n } — n дархости навбатӣ хатои шабака; { lose: n } — дар ҷадвал сабт мешавад, вале ҷавоб гум мешавад;
+   { delay: ms } — ҷавоби дер; { hold: Promise } — то иҷрои Promise интизор. */
 export async function fakeSheets(page, tables, { user = 'test', pass = 'test', loggedIn = false } = {}) {
-    const log = { appends: [], updates: [], deletes: [], reads: 0 };
-    const gid = name => Object.keys(tables).indexOf(name) + 10;
+    const api = sheetsApi(tables);
+    const log = api.log;
+    log.ops = [];
+    log.op = { fail: 0, lose: 0, delay: 0, hold: null };
     let logged = loggedIn;
-    const read = range => {
-        const { sheet, c0, c1, r0, r1 } = parseRange(range);
-        const rows = tables[sheet] || [];
-        const out = [];
-        for (let r = r0; r < rows.length && r <= r1; r++) out.push((rows[r] || []).slice(c0, c1 + 1));
-        while (out.length && out[out.length - 1].every(v => v === '' || v === undefined)) out.pop();
-        return { range, values: out };
+    let chain = Promise.resolve();
+    const inTurn = fn => { const r = chain.then(fn, fn); chain = r.catch(() => { }); return r; };
+    const reserved = {};
+    const colMax = (sheet, col = 0) => (tables[sheet] || []).slice(1).reduce((m, r) => Math.max(m, parseInt(r[col], 10) || 0), 0);
+    const reserveNow = async (sheet, n) => {
+        let max = colMax(sheet);
+        if (sheet === 'Products') max = Math.max(max, colMax('Transactions', 4));
+        const first = Math.max(reserved[sheet] || 0, max) + 1;
+        reserved[sheet] = first + n - 1;
+        return first;
     };
+    const dataDir = fs.mkdtempSync(path.join(OUT, 'ops-'));
+    const ops = createOps({ google: api.google, inTurn, reserveNow, dataDir, sheetIdOf: async t => tables[t] ? api.gid(t) : undefined });
+
     await page.setRequestInterception(true);
-    page.on('request', q => {
+    page.on('request', async q => {
         const u = new URL(q.url());
         if (!u.pathname.startsWith('/api/')) return q.continue();
         const json = (status, body) => q.respond({ status, contentType: 'application/json', body: JSON.stringify(body) });
@@ -77,40 +80,23 @@ export async function fakeSheets(page, tables, { user = 'test', pass = 'test', l
         if (p === '/api/login') { const b = body(); if (b.user === user && b.pass === pass) { logged = true; return json(200, { user, sheet: 'TEST-SHEET' }); } return json(401, { error: 'Логин ё парол нодуруст аст.' }); }
         if (p === '/api/logout') { logged = false; return json(200, { ok: true }); }
         if (!logged) return json(401, { error: 'auth' });
-        if (p === '/api/ids') {
-            const b = body(), rows = tables[b.sheet] || [[]];
-            let max = rows.slice(1).reduce((m, r) => Math.max(m, parseInt(r[0], 10) || 0), 0);
-            if (b.sheet === 'Products') max = Math.max(max, ...(tables.Transactions || []).slice(1).map(r => parseInt(r[4], 10) || 0));
-            return json(200, { first: max + 1 });
+        if (p === '/api/ids') { const b = body(); return json(200, { first: await reserveNow(b.sheet, b.n || 1) }); }
+        if (p === '/api/op') {
+            const b = body();
+            log.ops.push(b.id);
+            if (log.op.fail > 0) { log.op.fail--; return q.abort('internetdisconnected'); }
+            if (log.op.hold) await log.op.hold;
+            if (log.op.delay) await wait(log.op.delay);
+            try {
+                const r = await ops.run(b);
+                if (log.op.lose > 0) { log.op.lose--; return q.abort('connectionreset'); }
+                return json(200, r);
+            } catch (e) { return json(e.known ? 400 : 503, { error: e.known ? e.message : 'server' }); }
         }
         const rest = p.slice('/api/sheets'.length);
-        if (rest === '' && q.method() === 'GET') return json(200, { sheets: Object.keys(tables).map(t => ({ properties: { title: t, sheetId: gid(t) } })) });
-        if (rest === '/values:batchGet') { log.reads++; return json(200, { valueRanges: u.searchParams.getAll('ranges').map(read) }); }
-        if (rest.startsWith('/values/') && q.method() === 'GET') { log.reads++; return json(200, read(rest.slice(8))); }
-        const ap = /^\/values\/(.+):append$/.exec(rest);
-        if (ap) {
-            const sheet = parseRange(ap[1]).sheet, rows = body().values;
-            (tables[sheet] = tables[sheet] || [[]]).push(...rows.map(r => [...r]));
-            log.appends.push({ sheet, rows });
-            return json(200, { updates: { updatedRange: `${sheet}!A${tables[sheet].length - rows.length + 1}` } });
-        }
-        if (rest === '/values:batchUpdate') {
-            for (const d of body().data) {
-                const { sheet, c0, r0 } = parseRange(d.range);
-                d.values.forEach((vals, i) => vals.forEach((v, j) => { const row = (tables[sheet][r0 + i] = tables[sheet][r0 + i] || []); row[c0 + j] = v; }));
-                log.updates.push({ range: d.range, values: d.values });
-            }
-            return json(200, {});
-        }
-        if (rest === ':batchUpdate') {
-            for (const r of body().requests) {
-                const d = r.deleteDimension.range, sheet = Object.keys(tables).find(t => gid(t) === d.sheetId);
-                tables[sheet].splice(d.startIndex, d.endIndex - d.startIndex);
-                log.deletes.push({ sheet, row: d.startIndex + 1 });
-            }
-            return json(200, {});
-        }
-        return json(404, { error: 'unknown ' + rest });
+        if (rest === ':batchUpdate' && !body().requests.every(r => r.deleteDimension)) return json(403, { error: { message: 'not allowed' } });
+        const r = await api.google(rest + u.search, { method: q.method(), body: q.postData() || undefined });
+        q.respond({ status: r.status, contentType: 'application/json', body: r.text });
     });
     return log;
 }

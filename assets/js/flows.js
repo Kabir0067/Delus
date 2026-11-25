@@ -4,13 +4,12 @@
 /* ==================================================================
    ҶУСТУҶӮИ МОЛ ДАР ТИРЕЗАҲО
    ================================================================== */
+/* Беҳтарин мувофиқат аввал: номе, ки бо ҳамин калима сар мешавад, баъд хатои хурд, баъд номҳои маъмул (чароғ → лампа) */
 function matchProducts(q, limit = 8) {
-    const n = norm(q);
-    if (!n) return [];
-    return activeProds()
-        .filter(p => hasAll(`${p.name} ${p.product_code} ${p.category} ${p.description}`, q))
-        .sort((a, b) => (norm(a.name).startsWith(n) ? 0 : 1) - (norm(b.name).startsWith(n) ? 0 : 1) || String(a.name).localeCompare(String(b.name), 'ru'))
-        .slice(0, limit);
+    if (!norm(q)) return [];
+    const hit = findByCode(q);
+    if (hit && isActive(hit)) return [hit];
+    return rankBy(activeProds(), prodText, q).slice(0, limit);
 }
 
 /* Молҳои бештар истифодашуда — аввал */
@@ -23,12 +22,14 @@ function quickProducts(limit = 10) {
 /* Каталоги мол дар тиреза: ҷустуҷӯ ва аксҳои мол, ҳамеша дар пеши чашм.
    Бе ҷустуҷӯ — молҳои бештар истифодашуда, бо ҷустуҷӯ — натиҷаҳо.
    Пахш кардани акс молро илова мекунад; badge(p) рақами болои аксро медиҳад («×2» — чанд адад дар сабад). */
-function mountPicker(root, { onPick, onNew, stockAt, price, badge, first, max = 12 }) {
-    root.innerHTML = `<div class="pick"><div class="search">${ic('search', 17)}
-        <input type="search" data-auto placeholder="Ном ё рамзи молро нависед" autocomplete="off" enterkeyhint="search" aria-label="Ҷустуҷӯи мол">
-        <button type="button" class="search-x" data-clear aria-label="Тоза кардани ҷустуҷӯ" hidden>${ic('x', 15)}</button></div>
+function mountPicker(root, { onPick, onNew, onCode, stockAt, price, badge, first, max = 12 }) {
+    root.innerHTML = `<div class="pick"><div class="search ${onCode ? 'has-scan' : ''}">${ic('search', 17)}
+        <input type="search" data-auto placeholder="Номи мол ё штрихкод" autocomplete="off" enterkeyhint="search" aria-label="Ҷустуҷӯи мол">
+        <button type="button" class="search-x" data-clear aria-label="Тоза кардани ҷустуҷӯ" hidden>${ic('x', 15)}</button>
+        ${onCode ? `<button type="button" class="search-scan" data-scan aria-label="Скани штрихкод бо камера" title="Скан бо камера">${ic('scan', 20)}</button>` : ''}</div>
         <div class="pick-grid"></div><p class="pick-more" hidden></p></div>`;
     const inp = $('input', root), grid = $('.pick-grid', root), more = $('.pick-more', root), clr = $('[data-clear]', root);
+    if (onCode) $('[data-scan]', root).onclick = () => scanCode({ title: 'Скан: ҳар қуттӣ як адад', multi: true, onCode });
     let items = [], hot = 0;
 
     function tile(it, i, q) {
@@ -58,7 +59,7 @@ function mountPicker(root, { onPick, onNew, stockAt, price, badge, first, max = 
         clr.hidden = !q;
         const all = activeProds().length;
         more.hidden = !!q || all <= found.length;
-        more.textContent = `Боз ${fmt(all - found.length)} мол ҳаст — барои ёфтан номашро нависед.`;
+        more.textContent = `Боз ${fmt(all - found.length)} мол ҳаст. Барои ёфтан номашро нависед ё штрихкодро скан кунед.`;
     }
     /* Пахши плитка ҷустуҷӯро нигоҳ медорад: боз пахш — боз як адад. Enter (клавиатура) илова мекунад ва барои моли навбатӣ тоза мекунад. */
     function choose(i, clear) {
@@ -86,12 +87,74 @@ function mountPicker(root, { onPick, onNew, stockAt, price, badge, first, max = 
    ФУРӮШ, ВОРИДОТ, ИНТИҚОЛ — як тирезаи умумӣ
    ================================================================== */
 const DOCS = {
-    sale: { title: 'Фурӯш', sub: 'Молҳоро пахш кунед — ба сабад илова мешаванд', icon: 'sale', tone: 'tone-sale' },
+    sale: { title: 'Фурӯш', sub: 'Молро пахш кунед, ба сабад меравад', icon: 'sale', tone: 'tone-sale' },
     buy: { title: 'Воридот', sub: 'Моли омада ба анбор', icon: 'in', tone: 'tone-buy' },
     move: { title: 'Интиқол', sub: 'Мол аз як ҷой ба ҷойи дигар', icon: 'move', tone: 'tone-move' }
 };
 
-function docModal(kind, preset = null) {
+/* Гурӯҳи тугмаҳо бо сарлавҳа (на <label>: пахши сарлавҳа тугмаи аввалро пахш намекунад) */
+const group = (label, inner) => `<div class="field"><span class="field-l">${label}</span>${inner}</div>`;
+
+/* Ҷой бо тугмаҳо, на рӯйхати кушодашаванда: як пахш ва ҳамаи ҷойҳо дар пеши чашм.
+   count(l) — чанд мол дар он ҷо (ихтиёрӣ). Арзиш дар <input type=hidden name=…> аст. */
+function placeSeg(name, sel, count) {
+    return `<div class="place-seg" data-place="${name}" role="radiogroup">${activeLocs().map(l => {
+        const on = String(l.id) === String(sel), n = count ? count(l) : null;
+        return `<button type="button" role="radio" aria-checked="${on}" class="${on ? 'on' : ''}" data-id="${esc(l.id)}">
+            ${ic(l.location_type === 'Shop' ? 'sale' : 'box', 15)}<span>${esc(l.name)}</span>${n !== null ? `<small class="${n <= 0 ? 'neg' : ''}">${qty(n)}</small>` : ''}</button>`;
+    }).join('')}</div><input type="hidden" name="${name}" value="${esc(sel)}">`;
+}
+document.addEventListener('click', e => {
+    const b = e.target.closest('.place-seg [data-id]');
+    if (!b) return;
+    const seg = b.closest('.place-seg'), inp = seg.nextElementSibling;
+    $$('[data-id]', seg).forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', x === b); });
+    if (inp.value === b.dataset.id) return;
+    inp.value = b.dataset.id;
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+});
+
+/* Пардохт: нақд ё ба қарз (насия) */
+const payBlock = () => `
+    ${group('Пардохт', `<div class="seg pay-seg" role="radiogroup" aria-label="Пардохт">
+        <button type="button" class="on" data-pay="cash" role="radio" aria-checked="true">${ic('wallet', 16)}Нақд</button>
+        <button type="button" data-pay="debt" role="radio" aria-checked="false">${ic('debt', 16)}Ба қарз (насия)</button>
+    </div><input type="hidden" name="pay" value="cash">`)}
+    <div class="debt-box" data-debt-box hidden>
+        <div class="grid2">
+            ${field('Номи мизоҷ', `<input type="text" name="debt_customer" list="debtCustList" maxlength="80" autocomplete="off" placeholder="Масалан: Фирӯз Раҳимов">`)}
+            ${field('Телефон', '<input type="tel" name="debt_phone" inputmode="tel" maxlength="20" autocomplete="off" placeholder="+992 …">')}
+        </div>
+        <div class="grid2">
+            ${field('Ҳозир медиҳад <em>(ихтиёрӣ)</em>', '<input type="text" inputmode="decimal" name="debt_prepay" data-numpad data-np-label="Ҳозир чанд медиҳад?" autocomplete="off" placeholder="0">')}
+            ${field('То кай медиҳад <em>(ихтиёрӣ)</em>', `<input type="date" name="debt_due" min="${today()}">`)}
+        </div>
+        ${custDatalist('debtCustList')}
+    </div>`;
+function wirePay(root, changed) {
+    const seg = $('.pay-seg', root), box = $('[data-debt-box]', root), val = $('[name=pay]', root), who = $('[name=debt_customer]', root), tel = $('[name=debt_phone]', root);
+    seg.addEventListener('click', e => {
+        const b = e.target.closest('[data-pay]');
+        if (!b) return;
+        $$('[data-pay]', seg).forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', x === b); });
+        val.value = b.dataset.pay;
+        box.hidden = b.dataset.pay !== 'debt';
+        if (!box.hidden) { who.focus(); box.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+        changed();
+    });
+    $('[name=debt_prepay]', root).addEventListener('input', changed);
+    /* Номи мизоҷи шинос → телефонаш худ аз худ пур мешавад */
+    who.addEventListener('input', () => {
+        const c = customers().find(x => norm(x.name) === norm(who.value));
+        if (c && c.phone && !tel.value) tel.value = c.phone;
+    });
+}
+
+/* Майдони рақам бо сарлавҳаи хурд дар дохил */
+const nbox = (label, key, val, chips = '') => `<label class="nbox"><span class="nbox-l">${label}</span>
+    <input type="text" inputmode="decimal" data-v="${key}" data-numpad data-np-label="${esc(label)}" ${chips ? `data-np-chips="${esc(chips)}"` : ''} value="${esc(val)}" autocomplete="off"></label>`;
+
+function docModal(kind, preset = null, start = {}) {
     const locs = activeLocs();
     if (!locs.length) return toast('Аввал дар «Танзимот» анбор илова кунед.', 'err');
     if (kind === 'move' && locs.length < 2) return toast('Барои интиқол ақаллан ду ҷой лозим аст.', 'err');
@@ -101,48 +164,26 @@ function docModal(kind, preset = null) {
     const other = locs.find(l => String(l.id) !== String(wh.id));
     const toDefault = String(shop.id) !== String(wh.id) ? shop : other;
     const lines = [];
-    const dateF = field('Сана', `<input type="date" name="date" value="${today()}" max="${today()}">`);
+    const saleLoc = start.loc || (preset ? saleLocFor(preset) : saleLocFor(null));
 
-    /* Фурӯш: нақд ё ба қарз (насия) */
-    const payHtml = kind !== 'sale' ? '' : `
-        <div class="field"><span class="field-l">Пардохт</span>
-            <div class="seg pay-seg" role="radiogroup" aria-label="Пардохт">
-                <button type="button" class="on" data-pay="cash" role="radio" aria-checked="true">${ic('wallet', 15)}Нақд</button>
-                <button type="button" data-pay="debt" role="radio" aria-checked="false">${ic('debt', 15)}Ба қарз (насия)</button>
-            </div>
-            <input type="hidden" name="pay" value="cash">
-        </div>
-        <div class="debt-box" data-debt-box hidden>
-            <div class="grid2">
-                ${field('Номи мизоҷ', `<input type="text" name="debt_customer" list="debtCustList" maxlength="80" autocomplete="off" placeholder="Масалан: Фирӯз Раҳимов">`)}
-                ${field('Телефон', '<input type="tel" name="debt_phone" inputmode="tel" maxlength="20" autocomplete="off" placeholder="+992 …">')}
-            </div>
-            <div class="grid2">
-                ${field('Ҳозир медиҳад <em>(ихтиёрӣ)</em>', '<input type="text" inputmode="decimal" name="debt_prepay" autocomplete="off" placeholder="0">')}
-                ${field('То кай медиҳад <em>(ихтиёрӣ)</em>', `<input type="date" name="debt_due" min="${today()}">`)}
-            </div>
-            ${custDatalist('debtCustList')}
-        </div>`;
-
-    const locHtml = kind === 'sale'
-        ? field('Аз куҷо мефурӯшед', `<select name="loc">${locOptions(shop.id)}</select>`)
-        : kind === 'buy'
-            ? field('Ба куҷо омад', `<select name="loc">${locOptions(wh.id)}</select>`)
-            : `<div class="grid2 route">${field('Аз куҷо', `<select name="from">${locOptions(wh.id)}</select>`)}${field('Ба куҷо', `<select name="to">${locOptions(toDefault.id)}</select>`)}</div>`;
+    const locHtml = kind === 'sale' ? group('Аз куҷо мефурӯшед', placeSeg('loc', saleLoc))
+        : kind === 'buy' ? group('Ба куҷо омад', placeSeg('loc', wh.id))
+            : `<div class="route">${group('Аз куҷо', placeSeg('from', wh.id))}${group('Ба куҷо', placeSeg('to', toDefault.id))}</div>`;
 
     const m = formModal({
         title: DOCS[kind].title, sub: DOCS[kind].sub, icon: DOCS[kind].icon, tone: DOCS[kind].tone, size: 'xl', footClass: 'wrap',
         submitClass: kind === 'sale' ? 'sale-solid' : 'primary',
-        footExtra: '<div class="total"><span data-count></span><span><b data-total></b><small data-extra></small></span></div>',
+        footExtra: '<div class="total" data-tocart role="button" tabindex="0" aria-label="Ба сабад рафтан"><span data-count></span><span><b data-total></b><small data-extra></small></span></div>',
         body: `<div class="doc">
             <div class="doc-l">${locHtml}
-                <div class="field"><span class="field-l">Молҳо <em>(${kind === 'buy' ? 'пахш кунед ё номи моли навро нависед' : 'ҳар пахш — як адад'})</em></span><div data-pick></div></div>
+                ${group(`Молҳо <em>(${kind === 'buy' ? 'пахш кунед ё номи моли навро нависед' : 'ҳар пахш як адад'})</em>`, '<div data-pick></div>')}
             </div>
-            <div class="doc-r">
+            <div class="doc-r" data-cart>
                 <div class="doc-cart-h"><span>${ic(kind === 'move' ? 'move' : 'sale', 16)}${kind === 'sale' ? 'Сабад' : kind === 'buy' ? 'Моли омада' : 'Барои интиқол'}</span><small data-count2></small></div>
                 <div class="lines" data-lines></div>
-                ${payHtml}
-                <details class="extra"><summary>${ic('right', 14)}Сана ва эзоҳ</summary>${dateF}
+                ${kind === 'sale' ? payBlock() : ''}
+                <details class="extra"><summary>${ic('right', 14)}Сана ва эзоҳ</summary>
+                ${field('Сана', `<input type="date" name="date" value="${today()}" max="${today()}">`)}
                 ${field('Эзоҳ <em>(ихтиёрӣ)</em>', `<input type="text" name="note" maxlength="200" placeholder="${kind === 'sale' ? 'Номи мизоҷ ё рақами телефон' : 'Масалан: мошини 80-AA-123'}">`)}</details>
             </div>
         </div>`,
@@ -151,24 +192,9 @@ function docModal(kind, preset = null) {
 
     const box = $('[data-lines]', m.el), pick = $('[data-pick]', m.el);
     const sel = n => $(`[name=${n}]`, m.el);
-    if (kind === 'sale') {
-        const seg = $('.pay-seg', m.el), dbox = $('[data-debt-box]', m.el);
-        seg.addEventListener('click', e => {
-            const b = e.target.closest('[data-pay]');
-            if (!b) return;
-            $$('[data-pay]', seg).forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-checked', x === b); });
-            sel('pay').value = b.dataset.pay;
-            dbox.hidden = b.dataset.pay !== 'debt';
-            if (!dbox.hidden) sel('debt_customer').focus();
-            drawTotals();
-        });
-        sel('debt_prepay').addEventListener('input', () => drawTotals());
-        /* Номи мизоҷи шинос → телефонаш худ аз худ пур мешавад */
-        sel('debt_customer').addEventListener('input', () => {
-            const c = customers().find(x => norm(x.name) === norm(sel('debt_customer').value));
-            if (c && c.phone && !sel('debt_phone').value) sel('debt_phone').value = c.phone;
-        });
-    }
+    if (kind === 'sale') wirePay(m.el, () => drawTotals());
+    const toCart = () => $('[data-cart]', m.el).scrollIntoView({ block: 'start', behavior: 'smooth' });
+    $('[data-tocart]', m.el).addEventListener('click', toCart);
     const srcLoc = () => kind === 'move' ? sel('from').value : sel('loc').value;
     const lineSum = l => num(l.q) * num(kind === 'sale' ? l.price : l.cost);
 
@@ -185,8 +211,7 @@ function docModal(kind, preset = null) {
         }
         const to = sel('to').value, there = qtyAt(l.p.id, to);
         return `<span>${esc(locName(src))}: ${qty(have)} → <b class="${have - q < 0 ? 'neg' : ''}">${qty(round3(have - q))} ${u}</b></span>
-            <span>${esc(locName(to))}: ${qty(there)} → <b>${qty(round3(there + q))} ${u}</b></span>
-            <span>Арзиш: <b>${money(q * num(l.p.purchase_price))}</b></span>`;
+            <span>${esc(locName(to))}: ${qty(there)} → <b>${qty(round3(there + q))} ${u}</b></span>`;
     }
     function drawTotals() {
         lines.forEach((l, i) => {
@@ -200,15 +225,14 @@ function docModal(kind, preset = null) {
             w.textContent = `Дар ин ҷо ҳамагӣ ${qty(have)} ${unitOf(l.p)} ҳаст.`;
         });
         const n = lines.length;
-        $('[data-count]', m.el).textContent = n ? `${fmt(n)} мол` : 'Ҳоло мол нест';
+        $('[data-count]', m.el).textContent = n ? `${fmt(n)} мол` : 'Сабад холӣ';
         $('[data-count2]', m.el).textContent = n ? `${fmt(n)} мол` : '';
         if (pick.refresh) pick.refresh();
         const total = $('[data-total]', m.el), extra = $('[data-extra]', m.el);
         if (kind === 'sale') {
             const sum = lines.reduce((s, l) => s + lineSum(l), 0);
             total.textContent = money(sum);
-            const onDebt = sel('pay').value === 'debt';
-            extra.textContent = !n ? '' : onDebt
+            extra.textContent = !n ? '' : sel('pay').value === 'debt'
                 ? `Ба қарз: ${money(Math.max(0, sum - num(sel('debt_prepay').value)))}`
                 : `Фоида: ${money(lines.reduce((s, l) => s + num(l.q) * (num(l.price) - num(l.p.purchase_price)), 0))}`;
         } else if (kind === 'buy') {
@@ -217,36 +241,43 @@ function docModal(kind, preset = null) {
         } else {
             const units = new Map();
             lines.forEach(l => units.set(unitOf(l.p), (units.get(unitOf(l.p)) || 0) + num(l.q)));
-            total.textContent = [...units].map(([u, q]) => `${qty(q)} ${u}`).join(' + ');
+            total.textContent = [...units].map(([u, q]) => `${qty(q)} ${u}`).join(' + ') || '0';
             extra.textContent = n ? `Арзиш: ${money(lines.reduce((s, l) => s + num(l.q) * num(l.p.purchase_price), 0))}` : '';
         }
     }
     function quickChips(l) {
-        const have = Math.max(qtyAt(l.p.id, srcLoc()), 0), per = num(l.p.units_per_box);
+        const per = num(l.p.units_per_box);
         const add = per > 1 ? [`<button type="button" class="qchip" data-add="${per}">+1 қуттӣ (${qty(per)})</button>`] : [];
         if (kind === 'buy') return [...[10, 50, 100].map(n => `<button type="button" class="qchip" data-add="${n}">+${n}</button>`), ...add].join('');
+        const have = Math.max(qtyAt(l.p.id, srcLoc()), 0);
         return [...[1, 5, 10].map(n => `<button type="button" class="qchip" data-set="${n}">${n}</button>`),
             ...(have > 0 ? [`<button type="button" class="qchip" data-set="${have}">Ҳама (${qty(have)})</button>`] : []), ...add].join('');
     }
+    /* Калкулятор барои миқдор: рақамҳои тез ва «ҳама» */
+    const qtyChips = l => {
+        if (kind === 'buy') return [10, 50, 100, num(l.p.units_per_box) > 1 ? num(l.p.units_per_box) : 0].filter(Boolean).join('|');
+        const have = Math.max(qtyAt(l.p.id, srcLoc()), 0);
+        return [1, 2, 3, 5, 10].join('|') + (have > 0 ? `|${have}~Ҳама ${qty(have)}` : '');
+    };
     function drawLines() {
         if (!lines.length) {
-            box.innerHTML = `<div class="lines-empty">${ic('tag', 20)}<span>${kind === 'sale' ? 'Сабад холӣ аст. Молро аз рӯйхат пахш кунед — ҳар пахш як адад илова мекунад.' : 'Молро аз рӯйхат пахш кунед. Миқдор ва нарх дар ин ҷо пайдо мешаванд.'}</span></div>`;
+            box.innerHTML = `<div class="lines-empty">${ic('tag', 20)}<span>${kind === 'sale' ? 'Сабад холӣ аст. Молро аз рӯйхат пахш кунед: ҳар пахш як адад.' : 'Молро аз рӯйхат пахш кунед. Миқдор ва нарх дар ин ҷо пайдо мешаванд.'}</span></div>`;
             drawTotals();
             return;
         }
         box.innerHTML = lines.map((l, i) => {
-            const u = esc(unitOf(l.p));
+            const u = esc(unitOf(l.p)), have = qtyAt(l.p.id, srcLoc());
             return `<div class="line" data-i="${i}">
                 <div class="line-h">${thumb(l.p, 'sm')}
                     <span class="mini-b"><b>${esc(l.p.name)}</b><span class="line-c" data-c></span></span>
-                    <button type="button" class="line-x" data-rm aria-label="Аз сабад хориҷ кардан">${ic('x', 16)}</button></div>
-                <div class="line-f">
-                    <div class="line-q"><span class="field-l">Миқдор (${u})</span>
-                        <div class="qty"><button type="button" data-step="-1" aria-label="Кам кардан">${ic('minus', 15)}</button>
-                        <input type="text" inputmode="decimal" data-v="q" value="${esc(l.q)}" aria-label="Миқдор (${u})">
-                        <button type="button" data-step="1" aria-label="Зиёд кардан">${ic('plus', 15)}</button></div></div>
-                    ${kind === 'sale' ? field(`Нархи 1 ${u}`, `<input type="text" inputmode="decimal" data-v="price" value="${esc(l.price)}">`) : ''}
-                    ${kind === 'buy' ? field(`Нархи хариди 1 ${u}`, `<input type="text" inputmode="decimal" data-v="cost" value="${esc(l.cost)}">`) + field(`Нархи фурӯши 1 ${u}`, `<input type="text" inputmode="decimal" data-v="price" value="${esc(l.price)}">`) : ''}
+                    <button type="button" class="line-x" data-rm aria-label="Аз сабад хориҷ кардан" title="Хориҷ кардан">${ic('trash', 17)}</button></div>
+                <div class="line-f ${kind}">
+                    <div class="qty-box"><span class="nbox-l">Миқдор, ${u}</span>
+                        <div class="qty"><button type="button" data-step="-1" aria-label="Кам кардан">${ic('minus', 18)}</button>
+                        <input type="text" inputmode="decimal" data-v="q" data-numpad data-np-label="${esc(l.p.name)}: чанд ${u}?" data-np-hint="${kind === 'buy' ? '' : `Дар ${esc(locName(srcLoc()))}: ${qty(have)} ${u}`}" data-np-chips="${esc(qtyChips(l))}" value="${esc(l.q)}" aria-label="Миқдор (${u})">
+                        <button type="button" data-step="1" aria-label="Зиёд кардан">${ic('plus', 18)}</button></div></div>
+                    ${kind === 'sale' ? nbox(`Нархи 1 ${u}`, 'price', l.price, num(l.p.sale_price) ? `${num(l.p.sale_price)}~Нархи муқаррарӣ ${fmt(l.p.sale_price, 2)}` : '') : ''}
+                    ${kind === 'buy' ? nbox('Нархи харид', 'cost', l.cost) + nbox('Нархи фурӯш', 'price', l.price) : ''}
                     ${kind === 'move' ? '' : '<span class="line-t" data-t></span>'}
                 </div>
                 ${kind === 'sale' ? '' : `<div class="qchips">${quickChips(l)}</div>`}
@@ -255,16 +286,17 @@ function docModal(kind, preset = null) {
         }).join('');
         drawTotals();
     }
-    function addLine(p) {
+    function addLine(p, q = 1, price) {
         let i = lines.findIndex(l => String(l.p.id) === String(p.id));
-        if (i >= 0) lines[i].q = round3(num(lines[i].q) + 1);
-        else { lines.push({ p, q: 1, price: num(p.sale_price) || '', cost: num(p.purchase_price) || '' }); i = lines.length - 1; }
+        if (i >= 0) lines[i].q = round3(num(lines[i].q) + q);
+        else { lines.push({ p, q, price: price ?? (num(p.sale_price) || ''), cost: num(p.purchase_price) || '' }); i = lines.length - 1; }
         drawLines();
         const row = box.children[i];
         if (row) { row.classList.remove('flash'); void row.offsetWidth; row.classList.add('flash'); }
+        return lines[i];
     }
 
-    box.addEventListener('focusin', e => { if (e.target.dataset.v) e.target.select(); });
+    box.addEventListener('focusin', e => { if (e.target.dataset.v && !e.target.readOnly) e.target.select(); });
     box.addEventListener('input', e => {
         const k = e.target.dataset.v;
         if (!k) return;
@@ -286,24 +318,28 @@ function docModal(kind, preset = null) {
     });
     ['loc', 'from', 'to'].forEach(n => { const s = sel(n); if (s) s.addEventListener('change', drawLines); });
 
+    /* Скан: ҳар қуттӣ — як адад; штрихкоди нав — пайваст ба мол ё моли нав */
+    const onCode = code => {
+        const p = findByCode(code);
+        if (p && isActive(p)) { const l = addLine(p); return `${p.name}: ${qty(num(l.q))} ${unitOf(p)}`; }
+        unknownCode(code, np => addLine(np), { buy: kind === 'buy', newOk: kind === 'buy' || kind === 'sale' });
+        return { stop: true };
+    };
     mountPicker(pick, {
         stockAt: srcLoc,
         price: kind === 'move' ? null : p => kind === 'buy' ? num(p.purchase_price) : num(p.sale_price),
         badge: p => { const l = lines.find(x => String(x.p.id) === String(p.id)); return l ? '×' + qty(num(l.q)) : ''; },
         first: () => lines.map(l => prodBy(l.p.id) || l.p),
-        onPick: addLine,
-        onNew: kind === 'buy' ? name => productForm(null, { name, noOpening: true, onSaved: addLine }) : null
+        onPick: p => addLine(p),
+        onCode,
+        onNew: kind === 'buy' ? name => productForm(null, { name, noOpening: true, onSaved: p => addLine(p) }) : null
     });
-    if (preset) addLine(preset); else drawLines();
+    if (preset) addLine(preset, num(start.q) || 1, start.price); else drawLines();
+    return m;
 }
 
-/* Пас аз сабти асосӣ қадами иловагӣ хато карда метавонад (масалан, интернет қатъ шуд).
-   Он вақт тиреза баста мешавад ва корбар паёми аниқ мегирад: агар тиреза кушода монад,
-   корбар боз «Сабт кардан»-ро пахш мекунад ва фурӯш ё воридот ду бор сабт мешавад. */
-async function thenTry(fn, msg) {
-    try { await fn(); return true; }
-    catch (e) { console.error(e); toast(msg, 'err'); return false; }
-}
+/* Паём пас аз сабт: агар интернет набошад, мегӯяд, ки сабт дар телефон монд */
+const savedToast = text => toast(S.offline || navigator.onLine === false ? `${text}. Интернет нест: сабт дар телефон нигоҳ дошта шуд ва баъд худаш ба ҷадвал меравад.` : text);
 
 async function saveDoc(kind, lines, data) {
     if (!lines.length) throw bad('Ақаллан як мол илова кунед.');
@@ -313,19 +349,18 @@ async function saveDoc(kind, lines, data) {
         if (kind === 'buy' && num(l.cost) < 0) throw bad('Нарх манфӣ шуда наметавонад.');
     }
     const note = String(data.note || '').trim();
+    if (data.date && data.date > today()) throw bad('Санаи оянда интихоб шудааст.');
     const date = (data.date || today()) + nowStr().slice(10);
-    if (data.date > today()) throw bad('Санаи оянда интихоб шудааст.');
-
     if (kind === 'move' && String(data.from) === String(data.to)) throw bad('Ҷойи баромад ва расидан бояд гуногун бошанд.');
 
-    /* Қарз пеш аз ҳар сабт санҷида мешавад, то фурӯш бе қарз сабт нашавад */
+    /* Қарз пеш аз сабт санҷида мешавад, то фурӯш бе қарз сабт нашавад */
     const onDebt = kind === 'sale' && data.pay === 'debt';
     const saleSum = Math.round(lines.reduce((s, l) => s + num(l.q) * num(l.price), 0) * 100) / 100;
     const prepay = onDebt ? Math.round(num(data.debt_prepay) * 100) / 100 : 0;
     if (onDebt) {
         if (!String(data.debt_customer || '').trim()) throw bad('Номи мизоҷро нависед, ки қарз гирифт.');
         if (prepay < 0) throw bad('Маблағи пешпардохт нодуруст аст.');
-        if (prepay >= saleSum) throw bad('Пешпардохт ба маблағи пурра баробар аст — «Нақд»-ро интихоб кунед.');
+        if (prepay >= saleSum) throw bad('Пешпардохт ба маблағи пурра баробар аст. «Нақд»-ро интихоб кунед.');
     }
 
     if (kind !== 'buy') {
@@ -334,66 +369,109 @@ async function saveDoc(kind, lines, data) {
         if (short.length) {
             const go_ = await ask({
                 title: 'Ин қадар мол дар анбор нест',
-                text: `${short.map(l => `${l.p.name}: дар анбор ҳамагӣ ${qty(qtyAt(l.p.id, src))} ${unitOf(l.p)} мондааст`).join('; ')}. Бо вуҷуди ин мефурӯшед? Ҳисоби мол дар анбор манфӣ мешавад.`,
+                text: `${short.map(l => `${l.p.name}: дар ${locName(src)} ҳамагӣ ${qty(qtyAt(l.p.id, src))} ${unitOf(l.p)} мондааст`).join('; ')}. Бо вуҷуди ин сабт мекунед? Ҳисоби мол манфӣ мешавад.`,
                 ok: 'Сабт кардан'
             });
             if (!go_) return false;
         }
     }
 
-    const base = l => ({ date, product_id: l.p.id, quantity: num(l.q), unit: unitOf(l.p), note });
-    let recs;
+    const now = nowStr();
+    const base = l => ({ date, product_id: l.p.id, quantity: num(l.q), unit: unitOf(l.p), note, created_at: now });
+    const op = { receipt: kind === 'sale' };
     if (kind === 'sale') {
-        recs = lines.map(l => ({ ...base(l), type: 'SALE', from_location_id: num(data.loc), to_location_id: '', unit_cost: num(l.p.purchase_price), unit_price: num(l.price) }));
+        op.tx = lines.map(l => ({ ...base(l), type: 'SALE', from_location_id: num(data.loc), to_location_id: '', unit_cost: num(l.p.purchase_price), unit_price: num(l.price) }));
+        try { localStorage.setItem(SALE_LOC, String(data.loc)); } catch (e) { }
     } else if (kind === 'buy') {
-        recs = lines.map(l => ({ ...base(l), type: 'PURCHASE', from_location_id: '', to_location_id: num(data.loc), unit_cost: num(l.cost), unit_price: num(l.price) }));
+        op.tx = lines.map(l => ({ ...base(l), type: 'PURCHASE', from_location_id: '', to_location_id: num(data.loc), unit_cost: num(l.cost), unit_price: num(l.price) }));
+        /* Агар ҳангоми қабул нарх иваз шуда бошад, дар корти мол ҳам иваз мешавад */
+        op.prices = lines.filter(l => num(l.cost) !== num(l.p.purchase_price) || num(l.price) !== num(l.p.sale_price))
+            .map(l => ({ id: l.p.id, purchase_price: num(l.cost), sale_price: num(l.price) }));
     } else {
-        recs = lines.map(l => ({ ...base(l), type: 'TRANSFER', from_location_id: num(data.from), to_location_id: num(data.to), unit_cost: num(l.p.purchase_price), unit_price: num(l.p.sale_price) }));
+        op.tx = lines.map(l => ({ ...base(l), type: 'TRANSFER', from_location_id: num(data.from), to_location_id: num(data.to), unit_cost: num(l.p.purchase_price), unit_price: num(l.p.sale_price) }));
     }
-
-    const saved = await addTx(recs, { receipt: kind === 'sale' });
-    if (kind === 'buy' && !await thenTry(() => updatePrices(lines),
-        'Воридот сабт шуд, вале нархи нав дар корти мол сабт нашуд. Нархро дар корти мол иваз кунед.')) return;
-
+    let customer = '';
     if (onDebt) {
-        const rc = saved[0].receipt_code;
-        let d = null;
-        if (!await thenTry(async () => {
-            d = await addDebt({
-                customer: String(data.debt_customer).trim(), phone: String(data.debt_phone || '').trim(),
-                amount: saleSum, date, due_date: data.debt_due || '', receipt_code: rc, note
-            });
-        }, `Фурӯш сабт шуд (чеки ${rc}), вале қарз сабт нашуд. Дар бахши «Қарз» қарзро дастӣ илова кунед.`)) return;
-        if (prepay > 0 && !await thenTry(() => addPayments([{ debt_id: d.id, amount: prepay, method: 'CASH', note: 'Пешпардохт', date }]),
-            `Қарз сабт шуд, вале пешпардохти ${money(prepay)} сабт нашуд. Онро дар корти мизоҷ ҳамчун пардохт илова кунед.`)) return;
-        toast(`Фурӯш ба қарз сабт шуд. ${d.customer} қарздор: ${money(saleSum - prepay)}`);
-        return;
+        customer = String(data.debt_customer).trim();
+        op.debt = { customer, phone: String(data.debt_phone || '').trim(), amount: saleSum, paid: 0, status: 'OPEN', date, due_date: data.debt_due || '', receipt_code: '', note, created_at: now };
+        if (prepay > 0) op.pays = [{ debt_id: '$debt', amount: prepay, method: 'CASH', note: 'Пешпардохт', date, created_at: now }];
     }
-    toast(kind === 'sale' ? `Фурӯш сабт шуд: ${money(saleSum)}`
-        : kind === 'buy' ? 'Воридот сабт шуд' : 'Интиқол сабт шуд');
+    const what = lines.length === 1 ? `«${lines[0].p.name}»` : `${fmt(lines.length)} мол`;
+    queueOp(kind === 'sale' ? `Фурӯш ${what}, ${money(saleSum)}` : kind === 'buy' ? `Воридот ${what}` : `Интиқол ${what}`, op);
+    if (onDebt) savedToast(`Фурӯш ба қарз сабт шуд. ${customer} қарздор: ${money(saleSum - prepay)}`);
+    else savedToast(kind === 'sale' ? `Фурӯш сабт шуд: ${money(saleSum)}` : kind === 'buy' ? 'Воридот сабт шуд' : 'Интиқол сабт шуд');
 }
 
-/* Агар ҳангоми қабул нарх иваз шуда бошад, дар корти мол ҳам иваз мешавад */
-async function updatePrices(lines) {
-    const changed = lines.filter(l => num(l.cost) !== num(l.p.purchase_price) || num(l.price) !== num(l.p.sale_price));
-    if (!changed.length) return;
-    const ids = await DB.get('Products!A:A');
-    const rowOf = new Map(ids.map((r, i) => [String(r[0]), i + 1]));
-    const h = head('Products');
-    const data = [];
-    changed.forEach(l => {
-        const row = rowOf.get(String(l.p.id));
-        if (!row) return;
-        data.push({ range: `Products!${colName(h.indexOf('purchase_price'))}${row}`, values: [[num(l.cost)]] });
-        data.push({ range: `Products!${colName(h.indexOf('sale_price'))}${row}`, values: [[num(l.price)]] });
+/* ==================================================================
+   ФУРӮШИ ТЕЗ: як мол, ду пахш
+   Корти мол → «Фурӯш» → «Фурӯхтан». Ҷой, нарх ва нақд худ аз худ интихоб шудаанд.
+   ================================================================== */
+const SALE_LOC = 'delus.saleLoc';
+/* Ҷойи фурӯш: охирин ҷойи истифодашуда ё мағоза. Агар он ҷо ин мол набошад, ҷое, ки мол ҳаст. */
+function saleLocFor(p, need = 1) {
+    const locs = activeLocs();
+    let last = '';
+    try { last = localStorage.getItem(SALE_LOC) || ''; } catch (e) { }
+    const pref = [locs.find(l => String(l.id) === last), shopLoc()].filter(Boolean);
+    if (!p) return (pref[0] || locs[0]).id;
+    const has = l => qtyAt(p.id, l.id) >= need;
+    return (pref.find(has) || [...locs].sort((a, b) => qtyAt(p.id, b.id) - qtyAt(p.id, a.id)).find(l => qtyAt(p.id, l.id) > 0) || pref[0] || locs[0]).id;
+}
+
+function quickSale(p0) {
+    const p = p0 && (prodBy(p0.id) || p0);
+    if (!p) return;
+    if (!activeLocs().length) return toast('Аввал дар «Танзимот» анбор илова кунед.', 'err');
+    const u = esc(unitOf(p)), price0 = num(p.sale_price);
+    const many = activeLocs().length > 1;
+    const m = formModal({
+        title: 'Фурӯш', icon: 'sale', tone: 'tone-sale', submit: 'Фурӯхтан', submitClass: 'sale-solid', size: 'qs', footClass: 'wrap',
+        footExtra: '<div class="total"><span data-have></span><span><b data-total></b><small data-extra></small></span></div>',
+        body: `<div class="qs-p">${thumb(p, 'qs')}<span class="qs-n"><b>${esc(p.name)}</b><small>${esc([p.category, p.product_code].filter(Boolean).join(' · '))}</small></span></div>
+            ${many ? group('Аз куҷо', placeSeg('loc', saleLocFor(p), l => qtyAt(p.id, l.id))) : `<input type="hidden" name="loc" value="${esc(activeLocs()[0].id)}">`}
+            <div class="qs-row">
+                <div class="qty-box big"><span class="nbox-l">Чанд ${u}</span>
+                    <div class="qty"><button type="button" data-step="-1" aria-label="Кам кардан">${ic('minus', 22)}</button>
+                    <input type="text" inputmode="decimal" name="q" value="1" data-numpad data-np-label="Чанд ${u}?" data-np-hint="${esc(p.name)}" autocomplete="off" aria-label="Миқдор">
+                    <button type="button" data-step="1" aria-label="Зиёд кардан">${ic('plus', 22)}</button></div></div>
+                <label class="nbox big"><span class="nbox-l">Нархи 1 ${u}</span><input type="text" inputmode="decimal" name="price" value="${esc(price0 || '')}" data-numpad data-np-label="Нархи 1 ${u}" ${price0 ? `data-np-chips="${esc(`${price0}~Нархи муқаррарӣ ${fmt(price0, 2)}`)}"` : ''} autocomplete="off"></label>
+            </div>
+            <div class="qchips qs-chips" data-chips></div>
+            <div class="line-w" data-w hidden></div>
+            ${payBlock()}
+            <button type="button" class="btn quiet block qs-more" data-more>${ic('plus', 16)}Боз мол илова кардан (дар як чек)</button>`,
+        onSubmit: d => saveDoc('sale', [{ p, q: d.q, price: d.price }], d)
     });
-    await DB.setRanges(data);
-    changed.forEach(l => {
-        const cur_ = prodBy(l.p.id) || l.p;
-        cur_.purchase_price = num(l.cost);
-        cur_.sale_price = num(l.price);
+    const sel = n => $(`[name=${n}]`, m.el);
+    const q = sel('q'), pr = sel('price'), chips = $('[data-chips]', m.el), warn = $('[data-w]', m.el);
+    const draw = () => {
+        const have = qtyAt(p.id, sel('loc').value), n = num(q.value), sum = n * num(pr.value);
+        $('[data-have]', m.el).textContent = `Дар ${locName(sel('loc').value)}: ${qty(have)} ${unitOf(p)}`;
+        $('[data-total]', m.el).textContent = money(sum);
+        $('[data-extra]', m.el).textContent = sel('pay').value === 'debt'
+            ? `Ба қарз: ${money(Math.max(0, sum - num(sel('debt_prepay').value)))}` : `Фоида: ${money(n * (num(pr.value) - num(p.purchase_price)))}`;
+        warn.hidden = n <= have;
+        warn.textContent = `Дар ин ҷо ҳамагӣ ${qty(have)} ${unitOf(p)} ҳаст.`;
+        chips.innerHTML = [1, 2, 3, 5, 10].map(k => `<button type="button" class="qchip ${n === k ? 'on' : ''}" data-set="${k}">${k}</button>`).join('')
+            + (have > 1 ? `<button type="button" class="qchip ${n === have ? 'on' : ''}" data-set="${have}">Ҳама (${qty(have)})</button>` : '');
+        $('[data-save]', m.el).textContent = sum > 0 ? `Фурӯхтан · ${money(sum)}` : 'Фурӯхтан';
+    };
+    wirePay(m.el, draw);
+    m.el.addEventListener('input', e => { if (e.target === q || e.target === pr) draw(); });
+    sel('loc').addEventListener('change', draw);
+    m.el.addEventListener('click', e => {
+        const b = e.target.closest('[data-step], [data-set]');
+        if (!b || !m.el.contains(b) || b.closest('.line')) return;
+        q.value = b.dataset.step ? Math.max(0, round3(num(q.value) + +b.dataset.step)) : num(b.dataset.set);
+        draw();
     });
-    wrote();
+    $('[data-more]', m.el).onclick = () => {
+        const start = { q: num(q.value) || 1, price: pr.value, loc: sel('loc').value };
+        m.close();
+        docModal('sale', p, start);
+    };
+    draw();
+    return m;
 }
 
 /* ---------- Ислоҳи бақия ---------- */
@@ -403,37 +481,52 @@ function fixModal(preset = null, locId = '') {
     let prod = preset;
     const m = formModal({
         title: 'Шумориши мол', sub: 'Молро шуморед ва миқдори воқеиро нависед', icon: 'fix', tone: 'tone-warn',
-        body: `${field('Ҷой', `<select name="loc">${locOptions(locId || locs[0].id)}</select>`)}
-            <div class="field"><span class="field-l">Мол</span><div data-pick></div></div>
+        body: `${group('Ҷой', placeSeg('loc', locId || (preset ? saleLocFor(preset) : locs[0].id)))}
+            ${group('Мол', '<div data-pick></div>')}
             <div class="note" data-cur style="margin-top:14px" hidden></div>
-            ${field('Дар асл чанд ҳаст?', '<input type="text" inputmode="decimal" name="real" autocomplete="off">', 'Агар рақам бо система фарқ кунад, барнома ҳисоби молро дуруст мекунад ва фарқро дар «Амалиётҳо» сабт мекунад.')}
+            ${field('Дар асл чанд ҳаст?', '<input type="text" inputmode="decimal" name="real" data-numpad data-np-label="Дар асл чанд ҳаст?" autocomplete="off">', 'Агар рақам бо ҳисоби барнома фарқ кунад, барнома ҳисобро дуруст мекунад ва фарқро дар «Амалиётҳо» сабт мекунад.')}
             ${field('Эзоҳ <em>(ихтиёрӣ)</em>', '<input type="text" name="note" maxlength="200" placeholder="Масалан: мол шикаста буд">')}`,
         async onSubmit(d) {
             if (!prod) throw bad('Молро интихоб кунед.');
             if (String(d.real).trim() === '') throw bad('Миқдори воқеиро нависед.');
             const now = qtyAt(prod.id, d.loc), real = num(d.real), diff = round3(real - now);
             if (!diff) { toast('Миқдори мол дуруст аст, тағйир лозим нест.'); return; }
-            await addTx([{
-                date: nowStr(), type: 'ADJUSTMENT', product_id: prod.id,
-                from_location_id: diff < 0 ? num(d.loc) : '', to_location_id: diff > 0 ? num(d.loc) : '',
-                quantity: Math.abs(diff), unit: unitOf(prod),
-                unit_cost: num(prod.purchase_price), unit_price: num(prod.sale_price),
-                note: String(d.note || '').trim() || `Шумориш: ${qty(now)} → ${qty(real)}`
-            }]);
-            toast('Ҳисоби мол дуруст шуд');
+            queueOp(`Шумориши «${prod.name}»`, {
+                tx: [{
+                    date: nowStr(), type: 'ADJUSTMENT', product_id: prod.id,
+                    from_location_id: diff < 0 ? num(d.loc) : '', to_location_id: diff > 0 ? num(d.loc) : '',
+                    quantity: Math.abs(diff), unit: unitOf(prod),
+                    unit_cost: num(prod.purchase_price), unit_price: num(prod.sale_price),
+                    note: String(d.note || '').trim() || `Шумориш: ${qty(now)} → ${qty(real)}`, created_at: nowStr()
+                }]
+            });
+            savedToast('Ҳисоби мол дуруст шуд');
         }
     });
     const cur_ = $('[data-cur]', m.el), loc = $('[name=loc]', m.el);
     const draw = () => {
         cur_.hidden = !prod;
-        if (prod) cur_.textContent = `${prod.name}: дар система ${qty(qtyAt(prod.id, loc.value))} ${unitOf(prod)}`;
+        if (prod) cur_.textContent = `${prod.name}: дар барнома ${qty(qtyAt(prod.id, loc.value))} ${unitOf(prod)}`;
     };
-    const pk = $('[data-pick]', m.el);
+    const pk = $('[data-pick]', m.el), real = $('[name=real]', m.el);
+    const chosen = p => {
+        prod = p;
+        draw();
+        if (pk.refresh) pk.refresh();
+        if (real.readOnly) openNumpad(real, { label: `${p.name}: дар асл чанд ҳаст?`, hint: `Дар барнома: ${qty(qtyAt(p.id, loc.value))} ${unitOf(p)}` });
+        else real.focus();
+    };
     loc.addEventListener('change', () => { draw(); if (pk.refresh) pk.refresh(); });
     mountPicker(pk, {
         stockAt: () => loc.value,
         badge: p => prod && String(prod.id) === String(p.id) ? '✓' : '',
-        onPick: p => { prod = p; draw(); $('[name=real]', m.el).focus(); }
+        onPick: chosen,
+        onCode: code => {
+            const p = findByCode(code);
+            if (p) { setTimeout(() => chosen(p), 250); return { msg: p.name, stop: true }; }
+            setTimeout(() => unknownCode(code, chosen, { newOk: false }), 250);
+            return { stop: true };
+        }
     });
     draw();
 }
@@ -453,7 +546,7 @@ function productView(id) {
     const m = Modal.open({
         title: 'Маълумоти мол', icon: 'tag', tone: 'tone-buy',
         body: `<div class="pv-photo ${hasPhoto ? '' : 'none'}">${hasPhoto ? `<button type="button" class="pv-zoom" data-zoom aria-label="Аксро калон кардан">${thumb(p, 'cover')}<span class="pv-zoom-i">${ic('search', 15)}Калон кардан</span></button>` : `${thumb(p, 'cover')}<button class="btn sm pv-add" data-act="prodEdit" data-id="${esc(p.id)}">${ic('camera', 15)}Акс гузоштан</button>`}</div>
-        <div class="pv-head"><b>${esc(p.name)}</b><small>${esc([p.product_code, p.category].filter(Boolean).join(' · '))}</small></div>
+        <div class="pv-head"><b>${esc(p.name)}</b><small>${esc([p.product_code, p.category, ...codesOf(p)].filter(Boolean).join(' · '))}</small></div>
         <div class="facts">
             <div><small>Дар анбор</small><b>${qty(qtyAll(p.id))} ${esc(unitOf(p))}</b></div>
             <div><small>Нархи фурӯш</small><b>${fmt(p.sale_price, 2)}</b></div>
@@ -461,7 +554,7 @@ function productView(id) {
             <div><small>Фоида аз 1 ${esc(unitOf(p))}</small><b>${fmt(profit, 2)}</b></div>
         </div>
         ${on ? `<div class="quick">
-            <button class="btn t-sale" data-act="sale" data-id="${esc(p.id)}">${ic('sale', 16)}Фурӯш</button>
+            <button class="btn sale-solid" data-act="quick" data-id="${esc(p.id)}">${ic('sale', 16)}Фурӯш</button>
             <button class="btn t-buy" data-act="buy" data-id="${esc(p.id)}">${ic('in', 16)}Воридот</button>
             <button class="btn t-move" data-act="move" data-id="${esc(p.id)}">${ic('move', 16)}Интиқол</button>
         </div>` : ''}
@@ -485,7 +578,7 @@ function productView(id) {
 function photoZoom(src, title = '') {
     if (!src) return;
     const m = Modal.open({
-        title: title || 'Акс', sub: 'Пахш кунед — калон мешавад. Бо ду ангушт ҳам калон кардан мумкин аст.', size: 'zoom',
+        title: title || 'Акс', sub: 'Пахш кунед, калон мешавад. Бо ду ангушт ҳам калон кардан мумкин аст.', size: 'zoom',
         body: `<div class="zoom" data-z><img src="${esc(src)}" alt="${esc(title)}" draggable="false"></div>`
     });
     const box = $('[data-z]', m.el), img = $('img', box);
@@ -592,9 +685,9 @@ async function selRun(what) {
     } catch (e) { showErr(e); }
 }
 
-function productForm(p = null, { name = '', noOpening = false, onSaved } = {}) {
+function productForm(p = null, { name = '', barcode = '', noOpening = false, onSaved } = {}) {
     const editing = !!p;
-    const v = p || { name, unit: 'дона' };
+    const v = p || { name, unit: 'дона', barcode };
     const units = UNITS.includes(v.unit) || !v.unit ? UNITS : [v.unit, ...UNITS];
     let photo = null, removed = false;
     const extra = v.series || v.color || v.description || num(v.mesta) || num(v.taga) || num(v.units_per_box);
@@ -616,18 +709,20 @@ function productForm(p = null, { name = '', noOpening = false, onSaved } = {}) {
             ${field('Воҳид', `<select name="unit">${options(units.map(u => [u, u]), v.unit || 'дона')}</select>`)}
         </div>
         <div class="grid2">
-            ${field('Нархи харид', `<input type="text" inputmode="decimal" name="purchase_price" value="${numVal(v.purchase_price)}" autocomplete="off">`)}
-            ${field('Нархи фурӯш', `<input type="text" inputmode="decimal" name="sale_price" value="${numVal(v.sale_price)}" autocomplete="off">`)}
+            ${field('Нархи харид', `<input type="text" inputmode="decimal" name="purchase_price" value="${numVal(v.purchase_price)}" data-numpad autocomplete="off">`)}
+            ${field('Нархи фурӯш', `<input type="text" inputmode="decimal" name="sale_price" value="${numVal(v.sale_price)}" data-numpad autocomplete="off">`)}
         </div>
+        ${field('Штрихкод <em>(ихтиёрӣ)</em>', `<span class="in-btn"><input type="text" name="barcode" value="${esc(v.barcode || '')}" inputmode="numeric" maxlength="200" autocomplete="off" placeholder="Рақами зери штрихкод">
+            <button type="button" class="btn t-buy" data-scancode>${ic('scan', 18)}Скан</button></span>`, 'Штрихкоди қуттиро скан кунед: баъд мол бо камера дар як сония ёфт мешавад.')}
         ${!editing && !noOpening ? `<div class="grid2">
-            ${field('Миқдори ҳозира дар анбор <em>(ихтиёрӣ)</em>', '<input type="text" inputmode="decimal" name="opening" autocomplete="off">')}
-            ${field('Дар куҷо', `<select name="opening_loc">${locOptions((activeLocs()[0] || {}).id)}</select>`)}
+            ${field('Миқдори ҳозира дар анбор <em>(ихтиёрӣ)</em>', '<input type="text" inputmode="decimal" name="opening" data-numpad autocomplete="off">')}
+            ${field('Дар куҷо', `<select name="opening_loc">${locOptions((activeLocs().find(l => l.location_type !== 'Shop') || activeLocs()[0] || {}).id)}</select>`)}
         </div>` : ''}
         <details class="extra" ${extra ? 'open' : ''}>
             <summary>${ic('right', 14)}Маълумоти иловагӣ</summary>
             <div class="grid2">
                 ${field('Рамзи мол', `<input type="text" name="product_code" value="${esc(v.product_code)}" maxlength="40" placeholder="Худкор" autocomplete="off">`)}
-                ${field('Ҳадди кам', `<input type="text" inputmode="decimal" name="min_stock" value="${numVal(v.min_stock)}" placeholder="${esc(qty(S.cfg.low_stock_default))}" autocomplete="off">`)}
+                ${field('Ҳадди кам', `<input type="text" inputmode="decimal" name="min_stock" data-numpad value="${numVal(v.min_stock)}" placeholder="${esc(qty(S.cfg.low_stock_default))}" autocomplete="off">`)}
             </div>
             <div class="grid2">
                 ${field('Силсила', `<input type="text" name="series" value="${esc(v.series)}" maxlength="80" autocomplete="off">`)}
@@ -637,7 +732,7 @@ function productForm(p = null, { name = '', noOpening = false, onSaved } = {}) {
                 ${field('Шумораи ҷойҳо', `<input type="text" inputmode="numeric" name="mesta" value="${numVal(v.mesta)}" autocomplete="off">`)}
                 ${field('Шумораи тугмаҳо', `<input type="text" inputmode="numeric" name="taga" value="${numVal(v.taga)}" autocomplete="off">`)}
             </div>
-            ${field('Дар як қуттӣ', `<input type="text" inputmode="decimal" name="units_per_box" value="${numVal(v.units_per_box)}" autocomplete="off">`)}
+            ${field('Дар як қуттӣ', `<input type="text" inputmode="decimal" name="units_per_box" data-numpad value="${numVal(v.units_per_box)}" autocomplete="off">`)}
             ${field('Тавсиф', `<textarea name="description" maxlength="500">${esc(v.description)}</textarea>`)}
         </details>
         ${editing ? `<div class="danger-z">
@@ -654,12 +749,21 @@ function productForm(p = null, { name = '', noOpening = false, onSaved } = {}) {
             const code = String(d.product_code || '').trim();
             if (code && others.some(x => String(x.product_code).trim().toLowerCase() === code.toLowerCase())) throw bad(`Рамзи «${code}» аллакай истифода шудааст.`);
             if (num(d.purchase_price) < 0 || num(d.sale_price) < 0) throw bad('Нарх манфӣ шуда наметавонад.');
+            const codes = [...new Set(String(d.barcode || '').split(/[\s,;]+/).map(x => x.trim()).filter(Boolean))];
+            for (const c of codes) {
+                const used = others.find(x => codesOf(x).includes(c));
+                if (used) throw bad(`Штрихкоди ${c} аллакай ба «${used.name}» пайваст аст.`);
+            }
+            if (codes.length || (p && codesOf(p).length)) {
+                await ensureBarcodeCol();
+                if (!head('Products').includes('barcode')) throw bad('Сутуни штрихкод дар ҷадвал сохта нашуд. Интернетро санҷед ва боз кӯшиш кунед.');
+            }
             /* Агар чунин мол ҳаст, нусхаи дуюм сохта намешавад — моли нав ба бақияи ҳамон мол илова мегардад */
             const twin = others.find(x => isActive(x) && norm(x.name) === norm(nm));
             if (twin && (!p || norm(p.name) !== norm(nm))) {
                 const pickTwin = await choose({
                     title: 'Ин мол аллакай ҳаст',
-                    text: `«${twin.name}» аллакай дар система ҳаст ва ҳоло ${qty(qtyAll(twin.id))} ${unitOf(twin)} мавҷуд аст. Моли омадаро ба ҳамин мол илова кунем?`,
+                    text: `«${twin.name}» аллакай дар рӯйхат ҳаст ва ҳоло ${qty(qtyAll(twin.id))} ${unitOf(twin)} мавҷуд аст. Моли омадаро ба ҳамин мол илова кунем?`,
                     options: [['add', `Ба «${twin.name}» илова кардан`, 'primary'], ['new', 'Не, моли нав аст (алоҳида сабт шавад)', '']]
                 });
                 if (!pickTwin) return false;
@@ -681,7 +785,8 @@ function productForm(p = null, { name = '', noOpening = false, onSaved } = {}) {
                 taga: String(d.taga || '').trim() === '' ? '' : num(d.taga),
                 units_per_box: String(d.units_per_box || '').trim() === '' ? '' : num(d.units_per_box),
                 description: String(d.description || '').trim(),
-                min_stock: String(d.min_stock || '').trim() === '' ? '' : num(d.min_stock)
+                min_stock: String(d.min_stock || '').trim() === '' ? '' : num(d.min_stock),
+                ...(head('Products').includes('barcode') ? { barcode: codes.join(' ') } : {})
             };
             if (editing) {
                 if (code) rec.product_code = code;
@@ -695,10 +800,12 @@ function productForm(p = null, { name = '', noOpening = false, onSaved } = {}) {
             } else {
                 const saved = await addProduct({ ...rec, product_code: code, image_url: '', _photo: photo });
                 const open = num(d.opening);
-                if (open > 0 && d.opening_loc && !await thenTry(() => addTx([{
-                    date: nowStr(), type: 'PURCHASE', product_id: saved.id, from_location_id: '', to_location_id: num(d.opening_loc),
-                    quantity: open, unit: saved.unit, unit_cost: saved.purchase_price, unit_price: saved.sale_price, note: 'Моли мавҷуда (воридоти аввал)'
-                }]), 'Мол сабт шуд, вале миқдори аввал сабт нашуд. Метавонед онро бо «Воридот» илова кунед.')) return;
+                if (open > 0 && d.opening_loc) queueOp(`Миқдори аввали «${saved.name}»`, {
+                    tx: [{
+                        date: nowStr(), type: 'PURCHASE', product_id: saved.id, from_location_id: '', to_location_id: num(d.opening_loc),
+                        quantity: open, unit: saved.unit, unit_cost: saved.purchase_price, unit_price: saved.sale_price, note: 'Моли мавҷуда (воридоти аввал)', created_at: nowStr()
+                    }]
+                });
                 toast('Мол илова шуд');
                 if (onSaved) onSaved(saved);
             }
@@ -729,7 +836,7 @@ function productForm(p = null, { name = '', noOpening = false, onSaved } = {}) {
                 show(photo);
                 hint.className = 'photo-h ' + (r.small ? 'warn' : 'ok');
                 hint.textContent = r.small
-                    ? `Акс омода шуд: ${r.size}×${r.size}, ${r.kb} КБ. Акси аслӣ хурд аст — барои сифати беҳтар акси калонтар гиред.`
+                    ? `Акс омода шуд: ${r.size}×${r.size}, ${r.kb} КБ. Акси аслӣ хурд аст. Барои сифати беҳтар акси калонтар гиред.`
                     : `Акс омода шуд: ${r.size}×${r.size}, ${r.kb} КБ. Ҳангоми «Сабт кардан» ба ҷадвал меравад.`;
             } catch (e) {
                 hint.className = 'photo-h';
@@ -739,6 +846,14 @@ function productForm(p = null, { name = '', noOpening = false, onSaved } = {}) {
         };
     });
     rm.onclick = () => { photo = null; removed = true; show(''); };
+    $('[data-scancode]', m.el).onclick = async () => {
+        const code = await scanCode({ title: 'Скани штрихкоди мол' });
+        if (!code) return;
+        const inp = $('[name=barcode]', m.el), have = inp.value.split(/[\s,;]+/).filter(Boolean);
+        if (!have.includes(code)) inp.value = [...have, code].join(' ');
+        const used = findByCode(code);
+        if (used && (!p || String(used.id) !== String(p.id))) m.fail(`Штрихкоди ${code} аллакай ба «${used.name}» пайваст аст.`);
+    };
     th.addEventListener('click', () => { const src = photo || (removed ? '' : imgSrc(v)); if (src) photoZoom(src, String($('[name=name]', m.el).value || v.name || '')); });
 
     if (editing) {
@@ -785,8 +900,10 @@ function txView(id) {
     const left = isSale(x) ? round3(num(x.quantity) - returnedOf(x)) : 0;
     const debt = debtOfReceipt(x.receipt_code);
     if (debt) rows.push(['Қарз', `${debt.customer}: ${debt._closed ? 'пурра пардохт шуд' : 'боқимонда ' + money(debt._left)}`]);
+    /* Сабти навбат ҳанӯз дар ҷадвал нест: танҳо бекор кардан мумкин аст */
+    if (x._q && isQueued(x.id)) return queuedView(x, T, rows);
     const m = Modal.open({
-        title: T.t, sub: [x.transaction_code, x.receipt_code].filter(Boolean).join(' · '), icon: T.icon,
+        title: T.t, sub: [x.transaction_code, showCode(x.receipt_code)].filter(Boolean).join(' · '), icon: T.icon,
         tone: { SALE: 'tone-sale', PURCHASE: 'tone-buy', TRANSFER: 'tone-move', ADJUSTMENT: 'tone-warn', RETURN: 'tone-bad' }[x.type] || '',
         body: `${rows.map(([k, v]) => `<div class="kv"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}
         ${siblings.length > 1 ? `<p class="sec-t">Дар ин чек: ${money(netRev(siblings))}</p>
@@ -801,13 +918,34 @@ function txView(id) {
     $('[data-del]', m.el).onclick = async () => {
         const yes = await ask({
             title: 'Нест кардани амалиёт',
-            text: `${T.t} (${x.transaction_code}) нест карда мешавад ва ҳисоби молҳо аз нав дуруст мешавад.${debt ? ` Ин чек ба қарзи «${debt.customer}» вобаста аст — қарзро дар бахши «Қарз» дуруст кунед.` : ''}`,
+            text: `${T.t} (${x.transaction_code}) нест карда мешавад ва ҳисоби молҳо аз нав дуруст мешавад.${debt ? ` Ин чек ба қарзи «${debt.customer}» вобаста аст. Қарзро дар бахши «Қарз» дуруст кунед.` : ''}`,
             ok: 'Нест кардан', danger: true
         });
         if (!yes) return;
         try { await deleteTx(x); toast('Амалиёт нест карда шуд'); m.close(); }
         catch (e) { showErr(e); }
     };
+}
+
+function queuedView(x, T, rows) {
+    const j = Q.list.find(q => q.id === x._q);
+    const all = S.tx.filter(t => t._q === x._q);
+    const m = Modal.open({
+        title: T.t, sub: j && j.state === 'fail' ? 'Сабт нашуд' : 'Ҳанӯз ба ҷадвал нарафтааст', icon: T.icon, tone: 'tone-warn',
+        body: `<div class="note warn" style="margin-bottom:12px">${ic('sync', 16)}<span>${j && j.state === 'fail' ? esc(j.err) : 'Ин сабт дар телефон аст ва ҳамин ки интернет бошад, худаш ба ҷадвал меравад. Пас аз он тағйир додан ва нест кардан мумкин мешавад.'}</span></div>
+            ${rows.map(([k, v]) => `<div class="kv"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}
+            ${all.length > 1 ? `<p class="sec-t">Дар ин сабт ${fmt(all.length)} мол ҳаст</p>` : ''}`,
+        foot: `${j && j.state !== 'send' ? `<button type="button" class="btn danger" data-cancel-job>${ic('trash', 16)}Бекор кардан</button>` : ''}
+            <button type="button" class="btn primary" data-send>${ic('sync', 16)}Ҳозир фиристодан</button>`
+    });
+    const c = $('[data-cancel-job]', m.el);
+    if (c) c.onclick = async () => {
+        const yes = await ask({ title: 'Сабтро бекор кардан?', text: `«${j.label}» ба ҷадвал намеравад ва аз барнома нест мешавад.`, ok: 'Бекор кардан', cancel: 'Не', danger: true });
+        if (!yes) return;
+        if (cancelJob(j.id)) { toast('Сабт бекор карда шуд'); m.close(); }
+        else toast('Ин сабт ҳозир фиристода мешавад. Пас аз фиристодан онро нест кардан мумкин аст.', 'err');
+    };
+    $('[data-send]', m.el).onclick = async () => { m.close(); if (j) await retryJob(j.id); };
 }
 
 function txEdit(x) {
@@ -821,12 +959,12 @@ function txEdit(x) {
         body: `${field('Сана ва вақт', `<input type="datetime-local" name="date" value="${esc(when)}">`)}
             <div class="grid2">${fromF}${toF}</div>
             <div class="grid2">
-                ${field(`Миқдор (${esc(x.unit || unitOf(p))})`, `<input type="text" inputmode="decimal" name="quantity" value="${esc(x.quantity)}" autocomplete="off">`)}
+                ${field(`Миқдор (${esc(x.unit || unitOf(p))})`, `<input type="text" inputmode="decimal" data-numpad name="quantity" value="${esc(x.quantity)}" autocomplete="off">`)}
                 <span></span>
             </div>
             <div class="grid2">
-                ${field('Нархи харид', `<input type="text" inputmode="decimal" name="unit_cost" value="${esc(x.unit_cost)}" autocomplete="off">`)}
-                ${field('Нархи фурӯш', `<input type="text" inputmode="decimal" name="unit_price" value="${esc(x.unit_price)}" autocomplete="off">`)}
+                ${field('Нархи харид', `<input type="text" inputmode="decimal" data-numpad name="unit_cost" value="${esc(x.unit_cost)}" autocomplete="off">`)}
+                ${field('Нархи фурӯш', `<input type="text" inputmode="decimal" data-numpad name="unit_price" value="${esc(x.unit_price)}" autocomplete="off">`)}
             </div>
             ${field('Эзоҳ', `<input type="text" name="note" value="${esc(x.note)}" maxlength="200">`)}`,
         async onSubmit(d) {
@@ -850,12 +988,12 @@ function returnForm(x, left) {
     const debt = debtOfReceipt(x.receipt_code);
     const onDebt = debt && !debt._closed;
     formModal({
-        title: 'Бозгашти мол', sub: `${p.name || ''} · ${x.transaction_code}`, icon: 'back', tone: 'tone-bad',
+        title: 'Бозгашти мол', sub: `${p.name || ''} · ${x.transaction_code}`, icon: 'back', tone: 'tone-bad', size: 'sm',
         body: `${onDebt ? `<div class="note warn" style="margin-bottom:14px">${ic('debt', 16)}<span>Ин мол ба қарз фурӯхта шуда буд. Маблағи бозгашт аз қарзи «${esc(debt.customer)}» кам мешавад (боқимонда ${money(debt._left)}).</span></div>` : ''}
             <div class="grid2">
-                ${field(`Миқдор (то ${qty(left)})`, `<input type="text" inputmode="decimal" name="quantity" value="${esc(left)}" data-auto autocomplete="off">`)}
-                ${field('Ба куҷо', `<select name="loc">${locOptions(x.from_location_id)}</select>`)}
+                ${field(`Миқдор (то ${qty(left)})`, `<input type="text" inputmode="decimal" data-numpad name="quantity" value="${esc(left)}" data-numpad data-np-chips="${esc(left)}~Ҳама ${esc(qty(left))}" data-auto autocomplete="off">`)}
             </div>
+            ${group('Мол ба куҷо бармегардад', placeSeg('loc', isActive(locBy(x.from_location_id) || {}) ? x.from_location_id : shopLoc().id))}
             ${field('Сабаб <em>(ихтиёрӣ)</em>', '<input type="text" name="note" maxlength="200">')}`,
         submit: 'Бозгашт кардан',
         async onSubmit(d) {
@@ -863,20 +1001,19 @@ function returnForm(x, left) {
             if (q <= 0) throw bad('Миқдорро нависед.');
             if (q > left) throw bad(`Зиёда аз ${qty(left)} баргардонидан мумкин нест.`);
             const why = String(d.note || '').trim();
-            await addTx([{
-                date: nowStr(), type: 'RETURN', product_id: x.product_id, from_location_id: '', to_location_id: num(d.loc),
-                quantity: q, unit: x.unit, unit_cost: num(x.unit_cost), unit_price: num(x.unit_price),
-                note: `Бозгашт аз ${x.transaction_code}${why ? ' · ' + why : ''}`, receipt_code: x.receipt_code
-            }]);
             const sum = Math.round(q * num(x.unit_price) * 100) / 100;
-            if (onDebt) {
-                const off = Math.min(sum, I.debt.get(String(debt.id))._left);
-                if (off > 0 && !await thenTry(() => addPayments([{ debt_id: debt.id, amount: off, method: 'RETURN', note: `Бозгашти мол аз ${x.transaction_code}` }]),
-                    `Бозгашт сабт шуд, вале қарзи ${debt.customer} кам нашуд. Дар корти мизоҷ пардохтро бо роҳи «Бозгашти мол» илова кунед.`)) return;
-                toast(`Бозгашт сабт шуд. Қарзи ${debt.customer} ${money(off)} кам шуд.`);
-                return;
-            }
-            toast(`Бозгашт сабт шуд: ${money(sum)}`);
+            const now = nowStr();
+            /* бозгашт ва камшавии қарз дар як сабт: ё ҳарду, ё ҳеҷ кадом */
+            const off = onDebt ? Math.min(sum, I.debt.get(String(debt.id))._left) : 0;
+            queueOp(`Бозгашти «${p.name || 'мол'}»`, {
+                tx: [{
+                    date: now, type: 'RETURN', product_id: x.product_id, from_location_id: '', to_location_id: num(d.loc),
+                    quantity: q, unit: x.unit, unit_cost: num(x.unit_cost), unit_price: num(x.unit_price),
+                    note: `Бозгашт аз ${x.transaction_code}${why ? ' · ' + why : ''}`, receipt_code: x.receipt_code, created_at: now
+                }],
+                pays: off > 0 ? [{ debt_id: debt.id, amount: off, method: 'RETURN', note: `Бозгашти мол аз ${x.transaction_code}`, date: now, created_at: now }] : []
+            });
+            savedToast(off > 0 ? `Бозгашт сабт шуд. Қарзи ${debt.customer} ${money(off)} кам шуд` : `Бозгашт сабт шуд: ${money(sum)}`);
         }
     });
 }
@@ -892,7 +1029,7 @@ function expenseForm(e = null) {
     const m = formModal({
         title: e ? 'Тағйири хароҷот' : 'Хароҷоти нав', sub: 'Пуле, ки на барои мол сарф шуд', icon: 'wallet', tone: 'tone-exp',
         body: `<div class="grid2">
-                ${field(`Маблағ (${esc(cur())})`, `<input type="text" inputmode="decimal" name="amount" value="${esc(e ? e.amount : '')}" data-auto autocomplete="off">`)}
+                ${field(`Маблағ (${esc(cur())})`, `<input type="text" inputmode="decimal" data-numpad name="amount" value="${esc(e ? e.amount : '')}" data-numpad data-np-label="Чанд пул сарф шуд?" data-auto autocomplete="off">`)}
                 ${field('Сана', `<input type="date" name="date" value="${esc(e ? dayOf(e) : today())}" max="${today()}">`)}
             </div>
             ${field('Барои чӣ', `<input type="text" name="category" value="${esc(e ? e.category : '')}" maxlength="60" autocomplete="off">`)}
@@ -910,7 +1047,7 @@ function expenseForm(e = null) {
                 location_id: d.location_id === '' ? '' : num(d.location_id), note: String(d.note || '').trim()
             };
             await saveExpense(e, rec);
-            toast(`Хароҷот сабт шуд: ${money(amount_)}`);
+            savedToast(`Хароҷот сабт шуд: ${money(amount_)}`);
         }
     });
     $('[data-cats]', m.el).addEventListener('click', ev => {
@@ -984,7 +1121,7 @@ function cfgName() {
 function cfgLow() {
     formModal({
         title: 'Огоҳии кам мондани мол', size: 'sm',
-        body: field('Миқдор', `<input type="text" inputmode="decimal" name="v" value="${esc(S.cfg.low_stock_default)}" data-auto autocomplete="off">`, 'Барои як мол метавонед дар корти он ҳадди алоҳида гузоред.'),
+        body: field('Миқдор', `<input type="text" inputmode="decimal" data-numpad name="v" value="${esc(S.cfg.low_stock_default)}" data-auto autocomplete="off">`, 'Барои як мол метавонед дар корти он ҳадди алоҳида гузоред.'),
         async onSubmit(d) {
             if (String(d.v).trim() === '' || num(d.v) < 0) throw bad('Рақамро дуруст нависед.');
             await setSetting('low_stock_default', num(d.v), 'Агар миқдори мол аз ин кам шавад, огоҳӣ медиҳад, ки мол кам мондааст');
@@ -1014,6 +1151,22 @@ function cfgPass() {
 const ACT = {
     go: el => go(el.dataset.page, Object.fromEntries(['only', 'loc', 'status'].filter(k => el.dataset[k]).map(k => [k, el.dataset[k]]))),
     sale: el => docModal('sale', el.dataset.id ? prodBy(el.dataset.id) : null),
+    quick: el => quickSale(prodBy(el.dataset.id)),
+    /* Скан дар саҳифаи «Молҳо» ва «Анбор»: мол кушода мешавад */
+    async scanSearch() {
+        const code = await scanCode({ title: 'Ҷустуҷӯ бо штрихкод' });
+        if (!code) return;
+        const p = findByCode(code);
+        if (p) return productView(p.id);
+        unknownCode(code, np => productView(np.id));
+    },
+    qRetry: el => retryJob(el.dataset.id || ''),
+    async qDrop(el) {
+        const j = Q.list.find(x => x.id === el.dataset.id);
+        if (!j) return;
+        if (!await ask({ title: 'Ин сабтро нест кунем?', text: `«${j.label}» ба ҷадвал нарафт. Агар нест кунед, он аз барнома пок мешавад ва ҳисоби мол бармегардад.`, ok: 'Нест кардан', cancel: 'Не', danger: true })) return;
+        if (cancelJob(j.id)) toast('Сабт нест карда шуд');
+    },
     buy: el => docModal('buy', el.dataset.id ? prodBy(el.dataset.id) : null),
     move: el => docModal('move', el.dataset.id ? prodBy(el.dataset.id) : null),
     fix: el => fixModal(el.dataset.id ? prodBy(el.dataset.id) : null, S.f.loc || ''),
@@ -1077,7 +1230,10 @@ const ACT = {
         setTimeout(() => URL.revokeObjectURL(a.href), 2000);
     },
     cfgName, cfgLow, cfgPass,
-    logout: async () => { if (await ask({ title: 'Аз барнома баромадан?', ok: 'Баромадан' })) logout(); },
+    logout: async () => {
+        const n = qWaiting().length + qFailed().length;
+        if (await ask({ title: 'Аз барнома баромадан?', text: n ? `${fmt(n)} сабт ҳанӯз ба ҷадвал нарафтааст. Онҳо дар ин телефон мемонанд ва пас аз воридшавии навбатӣ фиристода мешаванд.` : '', ok: 'Баромадан' })) logout();
+    },
     theme(el) {
         const dark = getTheme() !== 'dark';
         setTheme(dark ? 'dark' : 'light');
@@ -1106,7 +1262,13 @@ const ACT = {
     },
     dayTx: el => go('tx', { from: el.dataset.a, to: el.dataset.b, ...(S.page === 'rep' && S.rep.loc ? { loc: S.rep.loc } : {}) }),
     sync: async () => {
-        try { await sync(); toast('Маълумот нав шуд'); } catch (e) { showErr(e); }
+        try {
+            Q.wait = 0;
+            await flush();
+            await sync();
+            const n = qWaiting().length;
+            toast(n ? `Маълумот нав шуд. ${fmt(n)} сабт ҳанӯз дар навбат аст.` : 'Маълумот нав шуд');
+        } catch (e) { showErr(e); }
     }
 };
 
@@ -1174,8 +1336,10 @@ function logout(msg = '') {
     if (S.user) serverCall('/logout', {}).catch(() => { });
     Modal.closeAll();
     localStorage.removeItem('delus.auth');
-    Local.clear('kv');
+    /* навбати сабт пок намешавад: пас аз воридшавӣ худаш меравад */
+    Local.del('kv', 'snapshot');
     Local.clear('img');
+    clearTimeout(Q.timer);
     IMG.clear();
     Object.assign(S, { user: null, sheet: '', sig: '', products: [], locations: [], tx: [], txSorted: [], exp: [], debts: [], pays: [], f: {}, page: 'home' });
     reindexDebts();
@@ -1249,6 +1413,7 @@ function showApp() {
 
 async function enterApp() {
     const user = S.user;
+    await loadQueue();
     const snap = await Local.get('kv', 'snapshot');
     /* Ҳангоми хондани маълумоти маҳаллӣ сервер гуфта метавонад, ки сессия тамом шуд — он вақт барнома кушода намешавад */
     if (!S.user || S.user !== user) return;
@@ -1258,17 +1423,24 @@ async function enterApp() {
         showApp();
         loadImages();
         syncQuiet();
+        flush();
         return;
     }
     await sync();
-    if (S.user) { showApp(); loadImages(); }
+    if (S.user) { showApp(); loadImages(); flush(); }
 }
 
 setInterval(() => { if (S.user && !document.hidden) syncQuiet(); }, 60000);
 document.addEventListener('visibilitychange', () => {
     if (S.user && !document.hidden && Date.now() - S.syncedAt > 20000) syncQuiet();
 });
-window.addEventListener('online', () => { if (S.user) syncQuiet(); });
+window.addEventListener('online', () => { if (S.user) { Q.wait = 0; flush(); syncQuiet(); } });
+document.addEventListener('visibilitychange', () => { if (S.user && !document.hidden && Q.list.some(j => j.state === 'wait')) flush(); });
+
+/* Кори бе интернет: файлҳои барнома дар хотираи телефон (sw.js). Дар санҷиши худкор (webdriver) хомӯш аст. */
+if ('serviceWorker' in navigator && window.isSecureContext && (!navigator.webdriver || /[?&]sw=1/.test(location.search))) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(e => console.warn('sw', e)));
+}
 
 const startFailed = e => { console.error(e); S.user = null; showLogin(errText(e)); };
 

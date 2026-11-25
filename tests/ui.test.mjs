@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import ExcelJS from 'exceljs';
 import { serve, launch, watch, fakeSheets, login, layoutIssues, wait, OUT } from './lib.mjs';
+import { ean13, writeY4M } from './barcode.mjs';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? pass++ : fail++; console.log((c ? 'OK  ' : 'FAIL') + ' ' + m); };
@@ -47,18 +48,21 @@ function tables() {
     return { Products: P, Locations: L, Transactions: T, Settings: [['key', 'value', 'note'], ['company_name', 'DELUS', '']], Expenses: [['id', 'date', 'category', 'amount', 'location_id', 'note', 'created_at']], Debts: D, DebtPayments: DP, Images: I };
 }
 
-async function session(viewport = { width: 1280, height: 860 }) {
-    const ctx = await b.createBrowserContext();
+async function session(viewport = { width: 1280, height: 860 }, { browser = b, data = tables } = {}) {
+    const ctx = await browser.createBrowserContext();
     const page = await ctx.newPage();
     const errors = [];
     watch(page, errors);
     await page.setViewport(viewport);
-    const t = tables();
+    const t = data();
     const log = await fakeSheets(page, t);
     await login(page, srv.url);
     return { ctx, page, errors, t, log };
 }
 const st = (page, f, ...a) => page.evaluate(f, ...a);
+/* навбати сабт холӣ шуд: ҳама чиз ба ҷадвал рафт */
+const flushed = page => page.waitForFunction(() => !Q.busy && !Q.list.some(j => j.state === 'wait' || j.state === 'send'), { timeout: 20000 });
+const PHONE = { width: 390, height: 844, isMobile: true, hasTouch: true, deviceScaleFactor: 2 };
 
 /* ================= 1. Фурӯши якчанд мол дар як чек ================= */
 {
@@ -109,6 +113,7 @@ const st = (page, f, ...a) => page.evaluate(f, ...a);
     ok(/Бақия намерасад|дар анбор нест/.test(warnTitle), 'short stock is warned before saving: ' + warnTitle);
     await page.click('.ov:last-child [data-yes]');
     await page.waitForFunction(() => !document.querySelector('.ov'), { timeout: 10000 });
+    await flushed(page);
     const ap = log.appends.filter(x => x.sheet === 'Transactions');
     ok(ap.length === 1 && ap[0].rows.length === 5 && new Set(ap[0].rows.map(r => r[14])).size === 1, 'saved as ONE append of 5 rows with one receipt code');
     ok(t.Transactions.length === before + 5, 'sheet got 5 sale rows');
@@ -250,6 +255,142 @@ const st = (page, f, ...a) => page.evaluate(f, ...a);
     await ctx.close();
 }
 
+/* ================= 7. Телефон: фурӯш бо ду пахш, калкулятор, ҷавоби фаврӣ ================= */
+{
+    const { ctx, page, errors, t, log } = await session(PHONE);
+    await page.waitForFunction(() => (S.heads.Products || []).includes('barcode'), { timeout: 10000 });
+    ok(t.Products[0][t.Products[0].length - 1] === 'barcode', 'the app adds the «barcode» column to the sheet header by itself');
+    await page.evaluate(() => go('prod'));
+    await page.waitForSelector('.pcard [data-act=quick]');
+    const pid = await page.$eval('.pcard [data-act=quick]', e => e.dataset.id);
+    const stock0 = await page.evaluate(id => qtyAll(id), pid);
+    await page.click('.pcard [data-act=quick]');
+    await page.waitForSelector('.ov .sheet.qs');
+    ok(await page.$eval('.ov [name=q]', e => e.readOnly && e.inputMode === 'none'), 'phone: number fields do not open the phone keyboard');
+    await page.click('.ov [name=q]');
+    await page.waitForSelector('.ov .sheet.np');
+    for (const k of ['3', '×', '4']) await page.click(`.ov:last-child .np-k[data-k="${k}"]`);
+    ok(await page.$eval('.ov:last-child [data-r]', e => e.textContent) === '= 12', 'big keypad calculates 3 × 4 = 12');
+    await page.click('.ov:last-child [data-ok]');
+    await wait(80);
+    ok(await page.$eval('.ov [name=q]', e => e.value) === '12', 'keypad writes 12 into the quantity');
+    await page.click('.ov .qs-chips [data-set="2"]');
+    const label = await page.$eval('.ov [data-save]', e => e.textContent);
+    ok(/Фурӯхтан · /.test(label), 'sell button shows the total: ' + label);
+    await page.screenshot({ path: path.join(OUT, 'quick-390.png') });
+    log.op.delay = 2500;
+    const t0 = Date.now();
+    await page.click('.ov [data-save]');
+    await page.waitForFunction(() => !document.querySelector('.ov'), { timeout: 4000 });
+    const ms = Date.now() - t0;
+    ok(ms < 1200, `two taps: the sale closes at once even with a slow server (${ms} ms)`);
+    const now = await page.evaluate(id => ({ q: qtyAll(id), queued: S.tx.filter(x => x._q && isQueued(x.id)).length, badge: (document.querySelector('.sync-n') || {}).textContent || '' }), pid);
+    ok(now.q === stock0 - 2 && now.queued === 1, `stock drops right away: ${stock0} → ${now.q}`);
+    ok(now.badge === '1', 'sync button shows 1 record on its way');
+    await flushed(page);
+    log.op.delay = 0;
+    const last = t.Transactions[t.Transactions.length - 1];
+    ok(last[3] === 'SALE' && String(last[4]) === pid && last[7] === 2 && /^R-\d{5}$/.test(last[14]), 'the sale reached the sheet with a receipt number');
+    ok(await page.evaluate(() => !document.querySelector('.sync-n') && S.tx.every(x => !isQueued(x.id))), 'after sending: real numbers, badge gone');
+    ok(errors.length === 0, 'no console errors on the phone ' + JSON.stringify(errors.slice(0, 2)));
+    await ctx.close();
+}
+
+/* ================= 8. Бе интернет: навбат, бозкушоӣ, ҷавоби гумшуда, бекор кардан, қарз ================= */
+{
+    const { ctx, page, errors, t, log } = await session();
+    const n0 = t.Transactions.length;
+    log.op.fail = 1000;
+    await page.evaluate(() => quickSale(prodBy(1)));
+    await page.click('.ov [data-save]');
+    await page.waitForFunction(() => !document.querySelector('.ov'));
+    await page.waitForFunction(() => Q.list.length === 1 && Q.list[0].state === 'wait' && Q.wait > 0, { timeout: 10000 });
+    ok(t.Transactions.length === n0, 'no internet: nothing reached the sheet yet');
+    ok(await page.$eval('#banner', e => /Интернет нест|нарафт/.test(e.textContent)), 'banner explains the record is kept: ' + (await page.$eval('#banner', e => e.textContent.trim())).slice(0, 90));
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('#app:not([hidden]) .hero', { timeout: 20000 });
+    ok(await page.evaluate(() => Q.list.length === 1 && S.tx.some(x => isQueued(x.id))), 'app closed and opened again: the waiting sale is still there');
+    log.op.fail = 0;
+    log.op.lose = 1;
+    await page.evaluate(() => retryJob(Q.list[0].id));
+    await flushed(page);
+    ok(t.Transactions.length === n0 + 1, `internet back, first answer lost: written exactly once (+${t.Transactions.length - n0})`);
+    ok(new Set(log.ops).size === 1 && log.ops.length >= 3, `the same record id was sent ${log.ops.length} times, the sheet got it once`);
+
+    // бекор кардани сабти навбат
+    log.op.fail = 1000;
+    const q0 = await page.evaluate(() => qtyAll(2));
+    await page.evaluate(() => quickSale(prodBy(2)));
+    await page.click('.ov [data-save]');
+    await page.waitForFunction(() => Q.list.some(j => j.state === 'wait' && j.tries > 0), { timeout: 10000 });
+    await page.evaluate(() => txView(S.tx.find(x => isQueued(x.id)).id));
+    await page.click('.ov [data-cancel-job]');
+    await page.waitForSelector('.ov:last-child [data-yes]');
+    await page.click('.ov:last-child [data-yes]');
+    await wait(100);
+    ok(await page.evaluate(q0 => !S.tx.some(x => isQueued(x.id)) && qtyAll(2) === q0, q0), 'a waiting sale can be cancelled: stock comes back');
+    log.op.fail = 0;
+    await page.evaluate(() => flush());
+    await wait(300);
+    ok(t.Transactions.length === n0 + 1, 'the cancelled sale never reaches the sheet');
+
+    // фурӯш ба қарз ва пардохт бе интернет: пардохт ба қарзи ҳанӯз нафиристода пайваст мешавад
+    log.op.fail = 1000;
+    await page.evaluate(() => docModal('sale', prodBy(3)));
+    await page.click('.ov [data-pay=debt]');
+    await page.type('.ov [name=debt_customer]', 'Навбат Тестов');
+    await page.type('.ov [name=debt_prepay]', '5');
+    const price = await page.evaluate(() => num(prodBy(3).sale_price));
+    await page.click('.ov [data-save]');
+    await page.waitForFunction(() => !document.querySelector('.ov'));
+    await page.evaluate(() => payCustomer(customers().find(c => c.name === 'Навбат Тестов'), 4));
+    const local = await page.evaluate(() => { const c = customers().find(x => x.name === 'Навбат Тестов'); return c && c.left; });
+    ok(local === price - 9, `offline: debt and a later payment show at once (left ${local})`);
+    log.op.fail = 0;
+    await page.evaluate(() => retryJob(''));
+    await flushed(page);
+    const d = t.Debts.find(r => r[1] === 'Навбат Тестов'), pays = t.DebtPayments.filter(r => d && r[1] === d[0]);
+    const sale = t.Transactions.find(r => d && r[14] === d[8] && r[3] === 'SALE');
+    ok(d && pays.length === 2 && d[4] === 9 && d[5] === 'OPEN' && sale, `sheet: debt with its receipt, 2 payments linked, paid 9 (${d && d[4]})`);
+    const real = errors.filter(e => !/ERR_INTERNET_DISCONNECTED|ERR_CONNECTION_RESET/.test(e));
+    ok(real.length === 0, 'no console errors offline (only the simulated network failures) ' + JSON.stringify(real.slice(0, 2)));
+    await ctx.close();
+}
+
+/* ================= 9. Сканери штрихкод: камераи сохта бо EAN-13 ================= */
+{
+    const code = ean13('460123456789');
+    const y4m = writeY4M(path.join(OUT, 'ean13.y4m'), code);
+    const cam = await launch(['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-video-capture=${y4m}`]);
+    const withCode = () => { const d = tables(); d.Products[0].push('barcode'); d.Products.slice(1).forEach(r => { while (r.length < 17) r.push(''); r.push(''); }); return d; };
+    const { ctx, page, errors, t } = await session(PHONE, { browser: cam, data: withCode });
+    await page.evaluate(() => docModal('sale'));
+    await page.waitForSelector('.ov .pick [data-scan]');
+    await page.click('.ov .pick [data-scan]');
+    await page.waitForSelector('.ov .sheet.scan video');
+    // штрихкоди нав: барнома мепурсад, ки ин кадом мол аст
+    await page.waitForFunction(() => [...document.querySelectorAll('.ov [role=dialog]')].some(d => /штрихкод дар рӯйхат нест/.test(d.getAttribute('aria-label'))), { timeout: 30000 });
+    ok(true, 'camera read the EAN-13 box code (unknown yet): ' + code);
+    await page.click('.ov:last-child [data-k=link]');
+    await page.waitForSelector('.ov:last-child .pick-i');
+    await page.click('.ov:last-child .pick-i:nth-child(5)');
+    await page.waitForFunction(() => document.querySelectorAll('.ov .line').length === 1, { timeout: 10000 });
+    const linked = await page.evaluate(c => { const p = findByCode(c); return p && [p.id, p.barcode]; }, code);
+    ok(linked && String(linked[1]).includes(code), 'code linked to the chosen product: ' + JSON.stringify(linked));
+    const row = t.Products.find(r => r[0] === linked[0]);
+    ok(row && String(row[row.length - 1]).includes(code), 'code saved in the sheet barcode column');
+    await page.click('.ov .pick [data-scan]');
+    await page.waitForFunction(() => { const l = document.querySelector('.ov .line [data-v=q]'); return l && l.value === '2'; }, { timeout: 30000 });
+    ok(true, 'next scan of the same box adds one more (×2)');
+    await page.screenshot({ path: path.join(OUT, 'scan-390.png') });
+    await page.click('.ov:last-child [data-done]');
+    await wait(100);
+    ok(await page.evaluate(c => matchProducts(c)[0] && String(matchProducts(c)[0].barcode).includes(c), code), 'typing the code in search finds the product');
+    ok(errors.filter(e => !/getUserMedia|NotReadable/.test(e)).length === 0, 'no console errors with the scanner ' + JSON.stringify(errors.slice(0, 2)));
+    await ctx.close();
+    await cam.close();
+}
+
 /* ================= 6. Андозаҳои экран: ҳамаи саҳифаҳо ва тирезаҳо ================= */
 const VP = [[320, 640], [360, 760], [375, 667], [390, 844], [414, 896], [768, 1024], [1024, 768], [1280, 800], [1440, 900], [1920, 1080]];
 const issues = [];
@@ -277,7 +418,11 @@ for (const [w, h] of VP) {
         zoom: () => page.evaluate(() => { productView(1); photoZoom(imgSrc(prodBy(1)), prodBy(1).name); }),
         form: () => page.evaluate(() => { productForm(prodBy(1)); }),
         debtor: () => page.evaluate(() => { debtorView(customers()[0].key); }),
-        receipt: () => page.evaluate(() => { debtReceipt(customers()[0].key); })
+        receipt: () => page.evaluate(() => { debtReceipt(customers()[0].key); }),
+        quick: () => page.evaluate(() => { quickSale(prodBy(1)); }),
+        quickDebt: async () => { await page.evaluate(() => quickSale(prodBy(1))); await page.click('.ov [data-pay=debt]'); },
+        numpad: () => page.evaluate(() => { quickSale(prodBy(1)); openNumpad(document.querySelector('.ov [name=q]'), { chips: [['1', '1'], ['5', '5'], ['25', 'Ҳама 25']] }); }),
+        scanner: () => page.evaluate(() => { scanCode({ title: 'Скан' }); })
     };
     for (const [name, open] of Object.entries(modals)) {
         await open();
@@ -291,7 +436,7 @@ for (const [w, h] of VP) {
     await ctx.close();
     console.log('     checked', tag);
 }
-ok(issues.length === 0, 'layout at 10 screen sizes, 8 pages, 10 windows: ' + (issues.length ? '\n   ' + issues.slice(0, 15).join('\n   ') : 'no issues'));
+ok(issues.length === 0, 'layout at 10 screen sizes, 8 pages, 14 windows: ' + (issues.length ? '\n   ' + issues.slice(0, 15).join('\n   ') : 'no issues'));
 
 await b.close();
 srv.close();

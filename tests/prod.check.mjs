@@ -56,7 +56,8 @@ try {
             const p = await addProduct({ name: n, category: m, unit: 'дона', purchase_price: price - 3, sale_price: price, image_url: '' });
             out.push(p.id);
         }
-        await addTx(out.map(id => ({ date: nowStr(), type: 'PURCHASE', product_id: id, from_location_id: '', to_location_id: loc, quantity: 10, unit: 'дона', unit_cost: 5, unit_price: 9, note: m })));
+        queueOp(m, { tx: out.map(id => ({ date: nowStr(), type: 'PURCHASE', product_id: id, from_location_id: '', to_location_id: loc, quantity: 10, unit: 'дона', unit_cost: 5, unit_price: 9, note: m, created_at: nowStr() })) });
+        await flush();
         return out;
     }, M);
     ok(ids.length === 2, 'two test products with stock created: ' + ids.join(', '));
@@ -75,14 +76,22 @@ try {
     const lines = await page.$$eval('.ov .line', e => e.length);
     ok(lines === 2, 'cart has 2 lines (one item tapped twice)');
     receipt = 'pending';
+    const t1 = Date.now();
     await page.click('.ov [data-save]');
     await page.waitForFunction(() => !document.querySelector('.ov'), { timeout: 60000 });
+    const closed = Date.now() - t1;
+    await page.waitForFunction(() => !Q.busy && !Q.list.some(j => j.state === 'wait' || j.state === 'send'), { timeout: 90000 });
+    ok(closed < 1500, `sale window closes at once (${closed} ms), the server write happens in the background (${Date.now() - t1} ms)`);
+    ok(await page.evaluate(() => !Q.list.some(j => j.state === 'fail')), 'no failed records in the queue');
     const sale = await page.evaluate(ids => {
         const rows = S.tx.filter(t => ids.includes(num(t.product_id)) && t.type === 'SALE');
         return { n: rows.length, rc: [...new Set(rows.map(r => r.receipt_code))], q: rows.map(r => num(r.quantity)).sort() };
     }, ids);
     receipt = sale.rc[0] || '';
-    ok(sale.n === 2 && sale.rc.length === 1 && JSON.stringify(sale.q) === '[1,2]', 'sale saved as one receipt with 2 lines: ' + JSON.stringify(sale));
+    ok(sale.n === 2 && sale.rc.length === 1 && /^R-\d{5}$/.test(sale.rc[0]) && JSON.stringify(sale.q) === '[1,2]', 'sale saved as one receipt with 2 lines: ' + JSON.stringify(sale));
+    await page.evaluate(() => sync());
+    const inSheet = await page.evaluate(rc => S.tx.filter(t => t.receipt_code === rc && !t._q).length, receipt);
+    ok(inSheet === 2, 'after re-reading the sheet: exactly 2 rows with that receipt (no duplicates)');
 
     /* нест кардан: ҳолати «Интихоб» */
     await page.evaluate(() => go('prod'));

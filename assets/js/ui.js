@@ -173,6 +173,147 @@ const options = (list, sel) => list.map(([v, t]) => `<option value="${esc(v)}" $
 const locOptions = sel => options(activeLocs().map(l => [l.id, l.name]), sel);
 
 /* ==================================================================
+   РАҚАМҲО ДАР ТЕЛЕФОН: КАЛКУЛЯТОРИ КАЛОН
+   Дар телефон майдони рақам (data-numpad) клавиатураи телефонро намекушояд: тугмаҳои калони рақам аз поён мебароянд.
+   Экран намеҷаҳад, сабад ва ҷамъ пӯшида намешаванд, бо як ангушт навиштан осон аст.
+   Ҳисоб ҳам мешавад: «12+8» ё «3×250». Дар компютер клавиатураи оддӣ мемонад.
+   ================================================================== */
+function npCalc(str) {
+    const s = String(str || '').replace(/,/g, '.').replace(/×/g, '*').replace(/−/g, '-').replace(/\s+/g, '');
+    if (!s || !/^[0-9.+*-]+$/.test(s)) return NaN;
+    let total = 0;
+    for (const term of s.match(/[+-]?[^+-]+/g) || []) {
+        const sign = term[0] === '-' ? -1 : 1;
+        let prod = 1;
+        for (const f of term.replace(/^[+-]/, '').split('*')) {
+            const v = parseFloat(f);
+            if (!isFinite(v)) return NaN;
+            prod *= v;
+        }
+        total += sign * prod;
+    }
+    return isFinite(total) ? round3(total) : NaN;
+}
+
+/* Танҳо экрани ламсӣ бе муш ва клавиатура (телефон, планшет) */
+const touchOnly = () => {
+    try { return matchMedia('(pointer: coarse)').matches && !matchMedia('(any-pointer: fine)').matches; } catch (e) { return false; }
+};
+
+/* opts: { label, hint, chips: [[value, text]], raw (рақамҳо бе ҳисоб, масалан штрихкод), onDone(value) } */
+function openNumpad(inp, opts = {}) {
+    if (!inp || inp.disabled) return;
+    const fld = inp.closest('.field, .nbox, .qty-box');
+    const lab = fld && $('.field-l, .nbox-l', fld);
+    const label = opts.label || inp.dataset.npLabel || (lab ? lab.textContent.replace(/\(.*?\)/g, '').trim() : '') || 'Рақам';
+    const hint = opts.hint ?? (inp.dataset.npHint || '');
+    const chips = opts.chips || (inp.dataset.npChips ? inp.dataset.npChips.split('|').filter(Boolean).map(x => { const [v, t] = x.split('~'); return [v, t || v]; }) : []);
+    let expr = String(inp.value ?? '').trim().replace(/\s/g, '');
+    let fresh = expr !== '';   // пахши аввал рақами кӯҳнаро иваз мекунад, мисли калкулятор
+    const key = (k, t = k, cls = '') => `<button type="button" class="np-k ${cls}" data-k="${k}">${t}</button>`;
+    const m = Modal.open({
+        title: label, sub: hint, size: 'np',
+        body: `<div class="np-disp" aria-live="polite"><span class="np-x" data-x></span><span class="np-r" data-r></span></div>
+            ${chips.length ? `<div class="np-chips">${chips.map(([v, t]) => `<button type="button" class="np-chip" data-v="${esc(v)}">${esc(t)}</button>`).join('')}</div>` : ''}
+            <div class="np-grid">
+                ${key(7)}${key(8)}${key(9)}${key('bk', '⌫', 'op')}
+                ${key(4)}${key(5)}${key(6)}${key('×', '×', 'op')}
+                ${key(1)}${key(2)}${key(3)}${key('+', '+', 'op')}
+                ${key('C', 'C', 'op')}${key(0)}${key('.', ',')}${key('−', '−', 'op')}
+            </div>`,
+        foot: `<button type="button" class="btn lg np-kbd" data-kbd>${ic('edit', 16)}Клавиатура</button>
+            <button type="button" class="btn sale-solid lg" data-ok>${ic('check', 18)}Тайёр</button>`
+    });
+    const xEl = $('[data-x]', m.el), rEl = $('[data-r]', m.el);
+    const ops = '×+−';
+    const draw = () => {
+        xEl.textContent = (expr || '0').replace(/\./g, ',');
+        xEl.classList.toggle('fresh', fresh && !!expr);
+        const v = [...ops].some(o => expr.includes(o)) ? npCalc(expr) : NaN;
+        rEl.textContent = isFinite(v) ? '= ' + fmt(v, 3) : '';
+    };
+    const commit = () => {
+        const v = expr === '' ? '' : opts.raw ? expr.replace(/\D/g, '') : npCalc(expr);
+        if (v !== '' && !opts.raw && !isFinite(v)) { m.sheet.classList.remove('np-bad'); void m.sheet.offsetWidth; m.sheet.classList.add('np-bad'); return; }
+        const out = v === '' || opts.raw ? String(v) : String(Math.max(0, v));
+        inp.value = out;
+        m.close();
+        inp.dispatchEvent(new Event('input', { bubbles: true }));
+        inp.dispatchEvent(new Event('change', { bubbles: true }));
+        if (opts.onDone) opts.onDone(out);
+    };
+    const press = k => {
+        if (navigator.vibrate) try { navigator.vibrate(8); } catch (e) { }
+        if (k === 'C') { expr = ''; fresh = false; return draw(); }
+        if (k === 'bk') { expr = fresh ? '' : expr.slice(0, -1); fresh = false; return draw(); }
+        if (ops.includes(k)) {
+            if (opts.raw) return;
+            fresh = false;
+            if (!expr) return;
+            expr = ops.includes(expr.slice(-1)) ? expr.slice(0, -1) + k : expr + k;
+            return draw();
+        }
+        if (fresh) { expr = ''; fresh = false; }
+        const last = expr.split(/[×+−]/).pop();
+        if (k === '.' && opts.raw) return;
+        if (k === '.') { if (!last.includes('.')) expr += last ? '.' : '0.'; return draw(); }
+        if (last === '0' && !opts.raw) expr = expr.slice(0, -1);
+        if (expr.length < (opts.raw ? 40 : 16)) expr += k;
+        draw();
+    };
+    m.el.addEventListener('click', e => {
+        const k = e.target.closest('[data-k]');
+        if (k) return press(k.dataset.k);
+        const c = e.target.closest('[data-v]');
+        if (c) { expr = c.dataset.v; fresh = false; return commit(); }
+        if (e.target.closest('[data-ok]')) return commit();
+        if (e.target.closest('[data-kbd]')) {
+            m.close();
+            inp.readOnly = false;
+            inp.inputMode = 'decimal';
+            inp.dataset.npOff = '1';
+            setTimeout(() => { inp.focus(); inp.select(); }, 60);
+        }
+    });
+    m.el.addEventListener('keydown', e => {
+        if (/^[0-9]$/.test(e.key)) { e.preventDefault(); press(e.key); }
+        else if (e.key === ',' || e.key === '.') { e.preventDefault(); press('.'); }
+        else if (e.key === '+') { e.preventDefault(); press('+'); }
+        else if (e.key === '-') { e.preventDefault(); press('−'); }
+        else if (e.key === '*' || e.key === 'x') { e.preventDefault(); press('×'); }
+        else if (e.key === 'Backspace') { e.preventDefault(); press('bk'); }
+        else if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    });
+    draw();
+    return m;
+}
+
+/* Майдонҳои рақам дар телефон: клавиатураи телефон намебарояд, пахш — калкулятор */
+function numpadReady(root) {
+    if (!touchOnly()) return;
+    const list = root.matches && root.matches('input[data-numpad]') ? [root] : $$('input[data-numpad]', root);
+    list.forEach(inp => {
+        if (inp.dataset.npOff) return;
+        inp.readOnly = true;
+        inp.inputMode = 'none';
+        inp.classList.add('np-in');
+    });
+}
+new MutationObserver(list => {
+    if (!touchOnly()) return;
+    for (const r of list) for (const n of r.addedNodes) if (n.nodeType === 1) numpadReady(n);
+}).observe(document.documentElement, { childList: true, subtree: true });
+document.addEventListener('click', e => {
+    const inp = e.target.closest && e.target.closest('input[data-numpad]');
+    if (inp && inp.readOnly && !inp.dataset.npOff && touchOnly()) { e.preventDefault(); openNumpad(inp); }
+});
+/* пас аз навиштан бо клавиатура майдон боз ба калкулятор бармегардад */
+document.addEventListener('focusout', e => {
+    const inp = e.target.closest && e.target.closest('input[data-numpad]');
+    if (inp && inp.dataset.npOff) { delete inp.dataset.npOff; numpadReady(inp); }
+});
+
+/* ==================================================================
    НАВИГАТСИЯ ВА НАМОИШ
    ================================================================== */
 /* Огоҳӣ танҳо молҳоеро мешуморад, ки корбар ҳанӯз дар «Анбор» надидааст.
@@ -251,7 +392,7 @@ function renderPage() {
     $('#pageTitle').textContent = meta.t;
     $('#pageSub').textContent = meta.s || todayLong();
     $('#brandName').textContent = S.cfg.company_name || 'DELUS';
-    document.title = `${meta.t} — ${S.cfg.company_name || 'DELUS'}`;
+    document.title = `${meta.t} · ${S.cfg.company_name || 'DELUS'}`;
     drawNav();
     const pg = PAGES[S.page];
     $('#view').innerHTML = `<div id="pageHead">${pg.head ? pg.head() : ''}</div><div id="pageBody"></div>`;
@@ -272,9 +413,10 @@ function refresh() {
     else renderPage();
 }
 
-const searchBox = ph => `<div class="search">${ic('search', 17)}
+const searchBox = (ph, scan = false) => `<div class="search ${scan ? 'has-scan' : ''}">${ic('search', 17)}
     <input type="search" data-f="q" placeholder="${esc(ph)}" value="${esc(S.f.q || '')}" autocomplete="off" aria-label="${esc(ph)}">
-    <button type="button" class="search-x" data-act="clearQ" aria-label="Тоза кардан" ${S.f.q ? '' : 'hidden'}>${ic('x', 15)}</button></div>`;
+    <button type="button" class="search-x" data-act="clearQ" aria-label="Тоза кардан" ${S.f.q ? '' : 'hidden'}>${ic('x', 15)}</button>
+    ${scan ? `<button type="button" class="search-scan" data-act="scanSearch" aria-label="Скан кардани штрихкод" title="Скан бо камера">${ic('scan', 18)}</button>` : ''}</div>`;
 const chips = (key, list) => `<div class="chips">${list.map(([k, t]) => `<button type="button" class="chip ${(S.f[key] || '') === k ? 'on' : ''}" data-act="chip" data-key="${key}" data-k="${k}">${t}</button>`).join('')}</div>`;
 const categories = () => [...new Set(S.products.map(p => String(p.category || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru'));
 const catSelect = () => `<select class="input" data-f="cat" aria-label="Гурӯҳ">${options([['', 'Ҳамаи гурӯҳҳо'], ...categories().map(c => [c, c])], S.f.cat || '')}</select>`;
