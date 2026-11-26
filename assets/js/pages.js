@@ -125,7 +125,7 @@ PAGES.home = {
             <button class="action sale" data-act="sale"><span class="action-i">${ic('sale', 22)}</span><span><b>Фурӯш</b><small>Сабти фурӯши мол</small></span></button>
             <button class="action buy" data-act="buy"><span class="action-i">${ic('in', 22)}</span><span><b>Воридот</b><small>Мол ба анбор омад</small></span></button>
             <button class="action move" data-act="move"><span class="action-i">${ic('move', 22)}</span><span><b>Интиқол</b><small>Аз анбор ба мағоза</small></span></button>
-            <button class="action exp" data-act="expNew"><span class="action-i">${ic('wallet', 22)}</span><span><b>Хароҷот</b><small>Иҷора, маош, нақлиёт</small></span></button>
+            <button class="action exp" data-act="expNew"><span class="action-i">${ic('wallet', 22)}</span><span><b>Хароҷот</b><small>Иҷора, маош, роҳкиро</small></span></button>
         </div>
         <div class="filters"><div class="chips">${PERIODS.slice(0, 5).map(([k, t]) => `<button type="button" class="chip ${S.homeK === k ? 'on' : ''}" data-act="homePeriod" data-k="${k}">${t}</button>`).join('')}</div></div>`,
 
@@ -146,7 +146,7 @@ PAGES.home = {
             <div>
                 <span class="hero-l">Фурӯш · ${esc(repLabel(q))}</span>
                 <div class="hero-v">${amount(rev)}</div>
-                <div class="hero-s"><span>${fmt(checks)} чек</span><span>${qty(sumQty(r.sales.filter(isSale)))} воҳид</span></div>
+                <div class="hero-s"><span>${fmt(checks)} чек</span><span>${qty(sumQty(r.sales.filter(isSale)))} адад</span></div>
             </div>
             ${chart(r, r.base, saleVal)}
         </section>
@@ -155,7 +155,7 @@ PAGES.home = {
 
         <div class="kpis">
             ${kpi('Фоидаи соф', 'chart', net < 0 ? 'tone-bad' : 'tone-sale', amount(net), `Фоида ${fmt(prof, 2)} − хароҷот ${fmt(expSum, 2)}`, 'data-act="repOpen" data-tab="profit"')}
-            ${kpi('Воридот', 'in', 'tone-buy', amount(buySum), `${qty(sumQty(r.buys))} воҳид омад`, 'data-act="repOpen" data-tab="buy"')}
+            ${kpi('Воридот', 'in', 'tone-buy', amount(buySum), `${qty(sumQty(r.buys))} адад омад`, 'data-act="repOpen" data-tab="buy"')}
             ${kpi('Хароҷот', 'wallet', 'tone-exp', amount(expSum), `${fmt(r.exp.length)} сабт`, 'data-act="repOpen" data-tab="exp"')}
             ${kpi('Мол дар анбор', 'box', 'tone-move', amount(cost, 0), 'Бо нархи харид', 'data-act="go" data-page="stock"')}
             ${(() => {
@@ -172,13 +172,13 @@ PAGES.home = {
 
         <div class="cols">
             <div class="card">
-                <div class="card-h"><h2><span class="tile sm tone-warn">${ic('warn', 16)}</span>Бояд харид</h2>${need.length ? `<button class="btn quiet sm" data-act="go" data-page="stock" data-only="need">Ҳама (${need.length})</button>` : ''}</div>
+                <div class="card-h"><h2><span class="tile sm tone-warn">${ic('warn', 16)}</span>Моли каммонда</h2>${need.length ? `<button class="btn quiet sm" data-act="go" data-page="stock" data-only="need">Ҳама (${need.length})</button>` : ''}</div>
                 ${need.length ? need.slice(0, 5).map(p => `<div class="mini need">
                     <button class="mini-open" data-act="prodView" data-id="${esc(p.id)}">${thumb(p, 'sm')}
                         <span class="mini-b"><b>${esc(p.name)}</b><small>Ҳадди кам: ${qty(lowLimit(p))} ${esc(unitOf(p))}</small></span></button>
                     ${stockPill(p)}
                     <button class="btn sm t-buy" data-act="buy" data-id="${esc(p.id)}" aria-label="Воридот" title="Воридот">${ic('in', 15)}<span>Воридот</span></button>
-                </div>`).join('') : '<p class="muted">Ҳамаи мол ба қадри кофӣ ҳаст.</p>'}
+                </div>`).join('') : '<p class="muted">Ҳамаи молҳо дар анбор кифоя ҳастанд.</p>'}
             </div>
             <div class="card">
                 <div class="card-h"><h2><span class="tile sm tone-move">${ic('list', 16)}</span>Амалиётҳои охирин</h2><button class="btn quiet sm" data-act="go" data-page="tx">Ҳама</button></div>
@@ -273,7 +273,7 @@ const REP = {
             ${kpi('Фоида', 'tag', 'tone-sale', amount(prof), `Аз фурӯш: ${pct(prof, rev)}${delta(prof, pr.prof)}`, 'data-act="repTab" data-tab="profit"')}
             ${kpi('Хароҷот', 'wallet', 'tone-exp', amount(ex), `${fmt(r.exp.length)} сабт${delta(ex, pr.ex, false)}`, 'data-act="repTab" data-tab="exp"')}
             ${kpi('Фоидаи соф', 'chart', prof - ex < 0 ? 'tone-bad' : 'tone-sale', amount(prof - ex), 'Фоида − хароҷот')}
-            ${kpi('Воридот', 'in', 'tone-buy', amount(buy), `${qty(sumQty(r.buys))} воҳид${delta(buy, pr.buy, false)}`, 'data-act="repTab" data-tab="buy"')}
+            ${kpi('Воридот', 'in', 'tone-buy', amount(buy), `${qty(sumQty(r.buys))} адад${delta(buy, pr.buy, false)}`, 'data-act="repTab" data-tab="buy"')}
         </div>
         <div class="cols">
             ${rcard('wallet', 'tone-sale', 'Пул дар ин давра', `
@@ -285,18 +285,18 @@ const REP = {
                 <div class="kv total-kv"><span>Боқимонда</span><b class="num ${left < 0 ? 'neg' : 'pos'}">${fmt(left, 2)} ${esc(cur())}</b></div>`)}
             ${rcard('sale', 'tone-sale', 'Фурӯш аз рӯи гурӯҳ', meters(sumBy(r.sales, catOf, saleVal).filter(v => v[1] > 0).slice(0, 6)))}
         </div>
-        <div class="stack" style="margin-top:14px">${rcard('pin', 'tone-buy', 'Аз рӯи анборҳо', rtable('Аз рӯи анборҳо', ['Ҷой', 'Воридот (воҳид)', 'Воридот (маблағ)', 'Фурӯш', 'Фоида', 'Интиқол', 'Хароҷот'], places, 'repPlace'))}</div>`;
+        <div class="stack" style="margin-top:14px">${rcard('pin', 'tone-buy', 'Аз рӯи анборҳо', rtable('Аз рӯи анборҳо', ['Ҷой', 'Воридот (адад)', 'Воридот (маблағ)', 'Фурӯш', 'Фоида', 'Интиқол', 'Хароҷот'], places, 'repPlace'))}</div>`;
     },
 
     sale(r, pv) {
         const rev = netRev(r.sales), sold = r.sales.filter(isSale), rets = r.sales.filter(isRet);
         const checks = new Set(sold.map(x => x.receipt_code || x.id)).size;
         const prods = byProduct(r.sales).filter(v => v.rev > 0).sort((a, b) => b.rev - a.rev);
-        return `${heroBlock('Фурӯш', amount(rev) + delta(rev, pv && netRev(pv.sales)), [`${fmt(checks)} чек`, `${qty(sumQty(sold))} воҳид`], r, r.base, saleVal)}
+        return `${heroBlock('Фурӯш', amount(rev) + delta(rev, pv && netRev(pv.sales)), [`${fmt(checks)} чек`, `${qty(sumQty(sold))} адад`], r, r.base, saleVal)}
         <div class="kpis">
             ${kpi('Чеки миёна', 'sale', 'tone-sale', amount(checks ? rev / checks : 0), `${fmt(checks)} чек`)}
-            ${kpi('Миқдори фурӯш', 'box', 'tone-buy', `${qty(sumQty(sold))} <small>воҳид</small>`, `${fmt(prods.length)} намуди мол`)}
-            ${kpi('Бозгашт', 'back', 'tone-bad', amount(rets.reduce((s, x) => s + txSum(x), 0)), `${qty(sumQty(rets))} воҳид`)}
+            ${kpi('Миқдори фурӯш', 'box', 'tone-buy', `${qty(sumQty(sold))} <small>адад</small>`, `${fmt(prods.length)} намуди мол`)}
+            ${kpi('Бозгашт', 'back', 'tone-bad', amount(rets.reduce((s, x) => s + txSum(x), 0)), `${qty(sumQty(rets))} адад`)}
             ${kpi('Фоида', 'tag', 'tone-sale', amount(netProfit(r.sales)), `Аз фурӯш: ${pct(netProfit(r.sales), rev)}`, 'data-act="repTab" data-tab="profit"')}
         </div>
         <div class="cols">
@@ -350,7 +350,7 @@ const REP = {
         const prods = byProduct(r.buys).sort((a, b) => b.buy - a.buy);
         const places = sumBy(r.buys, x => locName(x.to_location_id), txCost);
         const buyVal = x => x.type === 'PURCHASE' ? txCost(x) : 0;
-        return `${heroBlock('Воридот', amount(sum) + delta(sum, pv && pv.buys.reduce((s, x) => s + txCost(x), 0), false), [`${qty(sumQty(r.buys))} воҳид`, `${fmt(r.buys.length)} сабт`], r, r.base, buyVal)}
+        return `${heroBlock('Воридот', amount(sum) + delta(sum, pv && pv.buys.reduce((s, x) => s + txCost(x), 0), false), [`${qty(sumQty(r.buys))} адад`, `${fmt(r.buys.length)} сабт`], r, r.base, buyVal)}
         <div class="cols">
             ${rcard('pin', 'tone-buy', 'Ба кадом анбор омад', meters(places))}
             ${rcard('tag', 'tone-buy', 'Аз рӯи гурӯҳ', meters(sumBy(r.buys, catOf, txCost).slice(0, 8)))}
@@ -368,7 +368,7 @@ const REP = {
         });
         const prods = byProduct(r.moves).sort((a, b) => b.buy - a.buy);
         const moveVal = x => x.type === 'TRANSFER' ? num(x.quantity) : 0;
-        return `${heroBlock('Интиқол', `${qty(sumQty(r.moves))} <small>воҳид</small>`, [`Арзиш: ${fmt(value, 2)}`, `${fmt(r.moves.length)} сабт`], r, r.base, moveVal)}
+        return `${heroBlock('Интиқол', `${qty(sumQty(r.moves))} <small>адад</small>`, [`Арзиш: ${fmt(value, 2)}`, `${fmt(r.moves.length)} сабт`], r, r.base, moveVal)}
         <div class="stack" style="margin-top:14px">
             ${rcard('move', 'tone-move', 'Роҳҳо', rtable('Интиқол аз рӯи роҳ', ['Роҳ', 'Сабт', 'Миқдор', 'Арзиш'], [...routes.entries()].sort((a, b) => b[1].s - a[1].s).map(([k, v]) => ({ c: [k, fmt(v.n), qty(v.q), fmt(v.s, 2)] }))))}
             ${rcard('tag', 'tone-move', 'Моли интиқолшуда', rtable('Моли интиқолшуда', ['Мол', 'Миқдор', 'Арзиш'], prods.map(v => ({ id: v.id, c: [v.p.name, `${qty(v.q)} ${unitOf(v.p)}`, fmt(v.buy, 2)] })), 'prodView'))}
@@ -549,7 +549,7 @@ PAGES.stock = {
             activeProds().forEach(p => { const q = qtyAt(p.id, l.id); units += q; val += Math.max(q, 0) * num(p.purchase_price); });
             return `<button class="loc-sum ${String(S.f.loc) === String(l.id) ? 'on' : ''}" data-act="locFilter" data-id="${esc(l.id)}">
                 <span class="tile ${l.location_type === 'Shop' ? 'tone-sale' : 'tone-buy'}">${ic(l.location_type === 'Shop' ? 'sale' : 'box', 18)}</span>
-                <span><b>${esc(l.name)}</b><small class="num">${qty(units)} воҳид · ${fmt(val, 0)} ${esc(cur())}</small></span></button>`;
+                <span><b>${esc(l.name)}</b><small class="num">${qty(units)} адад · ${fmt(val, 0)} ${esc(cur())}</small></span></button>`;
         }).join('');
         const list = filterStock();
         if (!list.length) return `<div class="loc-sums">${sums}</div>` + empty('Чунин мол ёфт нашуд');
@@ -631,7 +631,7 @@ PAGES.tx = {
             ${box('fix', 'tone-warn', 'Фоида', fmt(netProfit(list), 2))}
             ${box('in', 'tone-buy', 'Воридот', fmt(of('PURCHASE').reduce((s, x) => s + txCost(x), 0), 2))}
             ${box('wallet', 'tone-exp', 'Хароҷот', fmt(sumExp(of('EXPENSE')), 2))}
-            ${box('move', 'tone-move', 'Интиқол', `${qty(sumQty(of('TRANSFER')))} воҳид`)}
+            ${box('move', 'tone-move', 'Интиқол', `${qty(sumQty(of('TRANSFER')))} адад`)}
         </div>`;
         if (!list.length) return head + empty('Амалиёт ёфт нашуд', 'Шарти ҷустуҷӯ ё санаро иваз кунед.');
         const shown = list.slice(0, S.limit);
