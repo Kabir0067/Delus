@@ -396,24 +396,27 @@ const PHONE = { width: 390, height: 844, isMobile: true, hasTouch: true, deviceS
     const { ctx, page, errors, t } = await session();
     // ранг: «White» ва «Сафед» як ранг; ҷустуҷӯи тоҷикӣ ва русӣ
     const whites = t.Products.slice(1).filter(r => ['White', 'Сафед'].includes(r[5])).length;
+    const exact = t.Products.slice(1).filter(r => r[5] === 'White').length;
     const byWord = await page.evaluate(() => ['сафед', 'белый', 'white'].map(q => filterProducts({ q }).length));
     ok(byWord.every(n => n === byWord[0]) && byWord[0] >= whites, 'search by colour: «сафед», «белый», «white» find the same products: ' + byWord);
     await page.evaluate(() => go('prod'));
     await page.click('#pageHead [data-act=fOpen]');
     await page.waitForSelector('.ov .sheet.fs');
-    ok(await page.$('.ov .fchip[data-k=color][data-v=white] .sw') !== null, 'filter window shows colour chips with a colour dot');
-    await page.click('.ov .fchip[data-k=color][data-v=white]');
+    const chipsText = await page.$$eval('.ov .fchip[data-k=color] span', e => e.map(x => x.textContent));
+    ok(chipsText.some(x => x.startsWith('White (')) && chipsText.some(x => x.startsWith('Сафед (')) && chipsText.some(x => x.startsWith('Black (')), 'colour chips show the colours exactly as written in the sheet: ' + chipsText.join(', '));
+    ok(await page.$('.ov .fchip[data-k=color][data-v=White] .sw') !== null, 'each colour chip has a colour dot');
+    await page.click('.ov .fchip[data-k=color][data-v=White]');
     const label = await page.$eval('.ov [data-apply]', e => e.textContent);
-    ok(label.includes(String(whites)), 'apply button counts the result: ' + label);
+    ok(label.includes(String(exact)), 'apply button counts the result: ' + label);
     await page.click('.ov [data-apply]');
     await wait(150);
     const shown = await page.$$eval('#pageBody .pcard', e => e.length);
-    ok(shown === whites && await page.evaluate(() => S.f.color === 'white'), `colour filter shows ${shown} of ${whites} white products`);
-    ok(await page.$eval('#pageHead .fpill', e => /Сафед/.test(e.textContent)), 'active filter is shown as a pill');
+    ok(shown === exact && await page.evaluate(() => S.f.color === 'White'), `colour filter «White» shows only products written «White» (${shown} of ${exact})`);
+    ok(await page.$eval('#pageHead .fpill', e => /White/.test(e.textContent)), 'active filter is shown as a pill');
     ok(await page.$eval('#pageHead .fbtn .f-n', e => e.textContent) === '1', 'filter button shows 1 active filter');
     await page.click('#pageHead .fpill');
     await wait(150);
-    ok(await page.evaluate(() => !S.f.color) && await page.$$eval('#pageBody .pcard', e => e.length) > whites, 'tapping the pill removes the filter');
+    ok(await page.evaluate(() => !S.f.color) && await page.$$eval('#pageBody .pcard', e => e.length) > exact, 'tapping the pill removes the filter');
     // гурӯҳ ва тартиб дар ҳамон тиреза
     await page.click('#pageHead [data-act=fOpen]');
     await page.waitForSelector('.ov .sheet.fs');

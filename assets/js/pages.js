@@ -441,23 +441,30 @@ function catCounts(list) {
     list.forEach(p => { const c = String(p.category || '').trim(); if (c) n.set(c, (n.get(c) || 0) + 1); });
     return [...n.entries()].sort((a, b) => a[0].localeCompare(b[0], 'ru'));
 }
-/* Рангҳое, ки дар ин молҳо ҳаст: [калид, ном, чанд мол], аввал рангҳои бисёр */
+/* Ранг дар филтр айнан ҳамон аст, ки дар ҷадвал навишта шудааст («White», «Молочный матовый»).
+   Танҳо фосила ва ҳарфи калону хурд фарқ намекунанд: «White» ва «white » як ранг. Доираи ранг танҳо барои чашм аст. */
+const colorText = v => String(v ?? '').trim().replace(/\s+/g, ' ');
+const sameColor = (a, b) => colorText(a).toLowerCase() === colorText(b).toLowerCase();
+const colorDot = v => swatch(colorKeys(v)[0] || '~');
+/* Рангҳое, ки дар ин молҳо ҳаст: [ранг, чанд мол], аввал рангҳои бисёр */
 function colorCounts(list) {
     const n = new Map(), names = new Map();
-    for (const p of list) for (const k of colorsOf(p)) {
+    for (const p of list) {
+        const t = colorText(p.color);
+        if (!t) continue;
+        const k = t.toLowerCase();
         n.set(k, (n.get(k) || 0) + 1);
-        if (!names.has(k)) names.set(k, k.startsWith('~') ? String(p.color).trim() : colorName(k));
+        if (!names.has(k)) names.set(k, t);
     }
-    return [...n.entries()].sort((a, b) => b[1] - a[1]).map(([k, c]) => [k, names.get(k), c]);
+    return [...n.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ru')).map(([k, c]) => [names.get(k), c]);
 }
-const colorLabel = key => key.startsWith('~') ? String((S.products.find(p => colorsOf(p).includes(key)) || {}).color || colorName(key)).trim() : colorName(key);
 const prodFilterSections = base => [
     { key: 'cat', label: 'Гурӯҳ', opts: [['', `Ҳама (${fmt(base.length)})`], ...catCounts(base).map(([c, n]) => [c, `${c} (${fmt(n)})`])] },
-    ...(colorCounts(base).length ? [{ key: 'color', label: 'Ранг', opts: [['', 'Ҳама рангҳо'], ...colorCounts(base).map(([k, t, n]) => [k, `${t} (${fmt(n)})`, swatch(k)])] }] : [])
+    ...(colorCounts(base).length ? [{ key: 'color', label: 'Ранг', opts: [['', 'Ҳама рангҳо'], ...colorCounts(base).map(([t, n]) => [t, `${t} (${fmt(n)})`, colorDot(t)])] }] : [])
 ];
 const prodPills = (keys = ['cat', 'color']) => [
     ...(keys.includes('cat') && S.f.cat ? [[`Гурӯҳ: ${S.f.cat}`, 'cat']] : []),
-    ...(keys.includes('color') && S.f.color ? [[`Ранг: ${colorLabel(S.f.color)}`, 'color', 'fDrop', swatch(S.f.color)]] : []),
+    ...(keys.includes('color') && S.f.color ? [[`Ранг: ${S.f.color}`, 'color', 'fDrop', colorDot(S.f.color)]] : []),
     ...(keys.includes('sort') && S.f.sort ? [[`Тартиб: ${(PROD_SORTS.find(x => x[0] === S.f.sort) || [, ''])[1]}`, 'sort']] : []),
     ...(keys.includes('loc') && S.f.loc ? [[`Ҷой: ${locName(S.f.loc)}`, 'loc']] : [])
 ];
@@ -472,7 +479,7 @@ function filterProducts(f = S.f) {
     let list = f.status === 'arch' ? S.products.filter(p => !isActive(p)) : activeProds();
     if (f.q) list = rankBy(list, prodText, f.q);
     if (f.cat) list = list.filter(p => String(p.category).trim() === f.cat);
-    if (f.color) list = list.filter(p => colorsOf(p).includes(f.color));
+    if (f.color) list = list.filter(p => sameColor(p.color, f.color));
     if (f.status === 'low') list = list.filter(p => stockState(p) === 'low');
     if (f.status === 'out') list = list.filter(p => ['out', 'neg'].includes(stockState(p)));
     if (f.status === 'photo') list = list.filter(p => !imgSrc(p));
@@ -487,10 +494,10 @@ function filterProducts(f = S.f) {
     return f.q && !f.sort ? list : [...list].sort(sorters[f.sort] || sorters.name);
 }
 
-/* Гурӯҳ ва ранги мол дар корт: «● Сафед · Розетки» */
+/* Гурӯҳ ва ранги мол дар корт: «● White · Розетки» (ранг ҳамон тавре, ки дар ҷадвал аст) */
 const prodSub = p => {
-    const k = colorsOf(p)[0];
-    return `${k ? `<span class="p-col">${swatch(k)}${esc(colorLabel(k))}</span>` : ''}${esc(p.category || (k ? '' : 'Бе гурӯҳ'))}`;
+    const t = colorText(p.color);
+    return `${t ? `<span class="p-col">${colorDot(t)}${esc(t)}</span>` : ''}${esc(p.category || (t ? '' : 'Бе гурӯҳ'))}`;
 };
 
 /* Ҳолати «Интихоб»: корт тамоман тугмаи интихоб мешавад */
@@ -577,7 +584,7 @@ function filterStock(f = S.f) {
     let list = activeProds();
     if (f.q) list = rankBy(list, prodText, f.q);
     if (f.cat) list = list.filter(p => String(p.category).trim() === f.cat);
-    if (f.color) list = list.filter(p => colorsOf(p).includes(f.color));
+    if (f.color) list = list.filter(p => sameColor(p.color, f.color));
     if (f.loc) list = list.filter(p => qtyAt(p.id, f.loc) !== 0);
     if (f.only === 'need') list = list.filter(p => stockState(p) !== 'ok');
     if (f.only === 'neg') list = list.filter(p => stockState(p) === 'neg');
