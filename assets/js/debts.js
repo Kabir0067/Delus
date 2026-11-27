@@ -14,10 +14,10 @@ const debtItems = d => d.receipt_code ? S.tx.filter(t => t.receipt_code === d.re
    ================================================================== */
 PAGES.debt = {
     head: () => `<div class="toolbar">
-        ${searchBox('Ном ё телефони мизоҷ')}
-        <button class="btn primary" data-act="debtNew">${ic('plus', 16)}Қарзи нав</button>
-        ${chips('dst', [['', 'Кушода'], ['late', 'Мӯҳлат гузашт'], ['closed', 'Пӯшида'], ['all', 'Ҳама']])}
-    </div>`,
+        ${searchBox('Ном ё телефон')}
+        <button class="btn primary debt-new" data-act="debtNew">${ic('plus', 16)}<span>Қарзи нав</span></button>
+    </div>
+    <div class="fbar">${chips('dst', [['', 'Қарздорон'], ['late', 'Мӯҳлат гузашт'], ['closed', 'Пардохт шуд'], ['all', 'Ҳама']])}</div>`,
 
     body() {
         const all = customers();
@@ -35,18 +35,19 @@ PAGES.debt = {
         const back = inRange(S.pays.filter(isCash), m0, m1).reduce((s, p) => s + num(p.amount), 0);
         const box = (icon, tone, label, value) => `<div><span class="tile ${tone}">${ic(icon, 18)}</span><span><small>${label}</small><b>${value}</b></span></div>`;
         const head = `<div class="sum-line">
-            ${box('debt', 'tone-warn', 'Ҳамагӣ қарз', money(open.reduce((s, c) => s + c.left, 0)))}
+            ${box('debt', 'tone-warn', 'Умумии қарз', money(open.reduce((s, c) => s + c.left, 0)))}
             ${box('user', 'tone-buy', 'Қарздорон', `${fmt(open.length)} нафар`)}
             ${box('warn', 'tone-bad', 'Мӯҳлат гузашт', money(lateSum))}
-            ${box('wallet', 'tone-sale', 'Баргашт дар ин моҳ', money(back))}
+            ${box('wallet', 'tone-sale', 'Ин моҳ баргашт', money(back))}
         </div>`;
 
-        if (!all.length) return head + `<div class="empty">${ic('debt', 30)}<b>Ҳоло қарз нест</b>
-            Вақте молро ба қарз мефурӯшед, дар тирезаи «Фурӯш» «Ба қарз (насия)»-ро интихоб кунед. Қарздор худаш дар ин ҷо пайдо мешавад.
-            <br><button class="btn primary" data-act="debtNew">${ic('plus', 16)}Қарзи кӯҳнаро сабт кардан</button></div>`;
+        if (!all.length) return head + empty('Қарздор нест',
+            'Вақте молро ба насия мефурӯшед, дар тирезаи фурӯш «Ба қарз (насия)»-ро пахш кунед. Мизоҷ худаш дар ин ҷо пайдо мешавад.',
+            `<button class="btn sale-solid" data-act="sale">${ic('sale', 16)}Фурӯш ба насия</button>
+            <button class="btn" data-act="debtNew">${ic('plus', 16)}Қарзи пешинаро нависед</button>`, 'debt');
         if (!list.length) return head + empty(
-            st === 'late' ? 'Мӯҳлати ҳеҷ кас нагузаштааст' : st === 'closed' ? 'Ҳоло қарзи пӯшида нест' : S.f.q ? 'Чунин мизоҷ ёфт нашуд' : 'Ҳамаи қарзҳо пардохт шудаанд',
-            S.f.q ? 'Ном ё телефонро дигар нависед.' : '');
+            st === 'late' ? 'Мӯҳлати ҳеҷ кас нагузаштааст' : st === 'closed' ? 'Пардохтшудаҳо нест' : S.f.q ? 'Чунин мизоҷ ёфт нашуд' : 'Ҳамаи қарзҳо пардохт шудаанд',
+            S.f.q ? 'Ном ё телефонро дигар нависед.' : '', '', st === 'late' ? 'check' : 'debt');
 
         const shown = list.slice(0, S.limit);
         return head + `<div class="debtors">${shown.map(c => {
@@ -54,17 +55,18 @@ PAGES.debt = {
             return `<article class="debtor ${c.late ? 'late' : ''} ${c.left <= MONEY_EPS ? 'closed' : ''}">
                 <button class="debtor-main" data-act="debtorView" data-id="${esc(c.key)}">
                     <span class="avatar-l">${esc(initial(c.name))}</span>
-                    <span class="debtor-t"><b>${esc(c.name)}</b><small>${esc(c.phone || 'бе телефон')}${nDebts > 1 ? ` · ${nDebts} қарз` : ''}${c.last ? ` · охирин пардохт ${esc(dayLabel(c.last.slice(0, 10)))}` : ''}</small></span>
-                    <span class="debtor-v"><b>${c.left > MONEY_EPS ? money(c.left) : 'Пӯшида'}</b><small>аз ${fmt(c.amount, 2)}</small></span>
+                    <span class="debtor-t"><b>${esc(c.name)}</b><small>${esc(c.phone || 'телефон нест')}${nDebts > 1 ? ` · ${nDebts} қарз` : ''}${c.last ? ` · охирин пардохт ${esc(dayLabel(c.last.slice(0, 10)))}` : ''}</small></span>
+                    <span class="debtor-v"><b>${c.left > MONEY_EPS ? money(c.left) : 'Пардохт шуд'}</b><small>аз ${fmt(c.amount, 2)}</small></span>
                 </button>
                 <div class="debtor-bar" title="Супорид ${pctPaid(c)}%"><i style="width:${pctPaid(c)}%"></i></div>
                 <div class="debtor-a">
                     ${c.late ? `<span class="pill bad">${ic('warn', 13)}Мӯҳлат гузашт</span>` : c.left <= MONEY_EPS ? `<span class="pill good">${ic('check', 13)}Пардохт шуд</span>` : `<span class="pill">Супорид ${pctPaid(c)}%</span>`}
-                    <span class="debtor-btns">
-                        ${c.phone ? `<a class="btn sm" href="${esc(telHref(c.phone))}" aria-label="Занг задан">${ic('phone', 14)}<span>Занг</span></a>` : ''}
-                        <button class="btn sm t-buy" data-act="debtReceipt" data-id="${esc(c.key)}" aria-label="Чеки насия" title="Чеки насия: фиристодан ба муштарӣ ё боргирӣ">${ic('receipt', 14)}<span>Чек</span></button>
-                        ${c.left > MONEY_EPS ? `<button class="btn sm t-sale" data-act="debtPay" data-id="${esc(c.key)}">${ic('wallet', 14)}Пардохт</button>` : ''}
-                    </span>
+                    ${nDebts > 1 ? `<small>${nDebts} харид ба қарз</small>` : ''}
+                </div>
+                <div class="debtor-btns">
+                    ${c.left > MONEY_EPS ? `<button class="btn sale-solid pay" data-act="debtPay" data-id="${esc(c.key)}">${ic('wallet', 16)}Пардохт қабул</button>` : ''}
+                    <button class="btn t-buy" data-act="debtReceipt" data-id="${esc(c.key)}" title="Чеки насия: фиристодан ба мизоҷ ё боргирӣ">${ic('receipt', 16)}Чек</button>
+                    ${c.phone ? `<a class="btn" href="${esc(telHref(c.phone))}" title="Занг задан">${ic('phone', 16)}Занг</a>` : ''}
                 </div>
             </article>`;
         }).join('')}</div>${moreBtn(shown.length, list.length)}`;
@@ -82,27 +84,27 @@ function debtorView(key) {
     const m = Modal.open({
         title: c.name, sub: c.phone || 'бе телефон', icon: 'user', tone: c.late ? 'tone-bad' : 'tone-warn',
         body: `<div class="facts">
-                <div><small>Ҳаҷми харид</small><b>${fmt(c.amount, 2)}</b></div>
-                <div><small>Пардохтшуда</small><b class="pos">${fmt(c.paid, 2)}</b></div>
-                <div><small>Маблағи боқимонда</small><b class="${c.left > MONEY_EPS ? 'neg' : 'pos'}">${fmt(c.left, 2)}</b></div>
-                <div><small>Ҳиссаи пардохт</small><b>${pctPaid(c)}%</b></div>
+                <div><small>Ҳамагӣ харид</small><b>${fmt(c.amount, 2)}</b></div>
+                <div><small>Супорид</small><b class="pos">${fmt(c.paid, 2)}</b></div>
+                <div><small>Боқимонда</small><b class="${c.left > MONEY_EPS ? 'neg' : 'pos'}">${fmt(c.left, 2)}</b></div>
+                <div><small>Фоизи пардохт</small><b>${pctPaid(c)}%</b></div>
             </div>
             <div class="debtor-bar big"><i style="width:${pctPaid(c)}%"></i></div>
             <div class="quick">
-                ${c.left > MONEY_EPS ? `<button class="btn t-sale" data-pay>${ic('wallet', 16)}Пардохт</button>
-                <button class="btn t-buy" data-full>${ic('check', 16)}Пурра бастан</button>` : ''}
+                ${c.left > MONEY_EPS ? `<button class="btn t-sale" data-pay>${ic('wallet', 16)}Пардохт қабул</button>
+                <button class="btn t-buy" data-full>${ic('check', 16)}Пурра пардохт шуд</button>` : ''}
                 <button class="btn t-move" data-receipt>${ic('receipt', 16)}Чеки насия</button>
                 <button class="btn" data-new>${ic('plus', 16)}Қарзи нав</button>
                 ${c.phone ? `<a class="btn" href="${esc(telHref(c.phone))}">${ic('phone', 16)}Занг</a>` : ''}
             </div>
 
-            <p class="sec-t">Рӯйхати харидҳо</p>
+            <p class="sec-t">Харидҳо</p>
             ${[...c.debts].reverse().map(d => {
                 const items = debtItems(d);
                 return `<div class="debt-row ${d._closed ? 'closed' : ''}">
                     <div class="debt-row-h">
                         <span><b>${money(d.amount)}</b><small>${esc(dayLabel(dayOf(d)))}${d.receipt_code ? ` · чеки № ${esc(showCode(d.receipt_code))}` : ' · хариди пешина'}${d.due_date ? ` · то ${esc(dotDate(String(d.due_date).slice(0, 10)))}` : ''}</small></span>
-                        <span class="debt-row-v">${d._closed ? `<span class="pill good">Пӯшида</span>` : `${d._late ? '<span class="pill bad">Мӯҳлат гузашт</span>' : ''}<b>${money(d._left)}</b><small>боқимонда</small>`}</span>
+                        <span class="debt-row-v">${d._closed ? `<span class="pill good">Пардохт шуд</span>` : `${d._late ? '<span class="pill bad">Мӯҳлат гузашт</span>' : ''}<b>${money(d._left)}</b><small>боқӣ</small>`}</span>
                         <button type="button" class="icon-btn" data-rc="${esc(d.id)}" aria-label="Чеки ҳамин харид" title="Чеки ҳамин харид">${ic('receipt', 16)}</button>
                         <button type="button" class="icon-btn" data-edit="${esc(d.id)}" aria-label="Тағйири қарз" title="Тағйири қарз">${ic('edit', 16)}</button>
                     </div>
@@ -111,15 +113,15 @@ function debtorView(key) {
                 </div>`;
             }).join('')}
 
-            <p class="sec-t">Пардохтҳо</p>
+            <p class="sec-t">Пардохтҳои қабулшуда</p>
             ${pays.length ? pays.map(p => `<div class="pay-row">
                 <span class="tile sm ${p.method === 'RETURN' ? 'tone-bad' : 'tone-sale'}">${ic(p.method === 'RETURN' ? 'back' : 'wallet', 15)}</span>
                 <span class="mini-b"><b>${money(p.amount)}</b><small>${esc(dayLabel(dayOf(p)))} · ${METHODS[String(p.method).toUpperCase()] || 'Нақд'}${p.note ? ' · ' + esc(p.note) : ''}</small></span>
                 <button type="button" class="icon-btn" data-delpay="${esc(p.id)}" aria-label="Нест кардани пардохт" title="Нест кардани пардохт">${ic('trash', 15)}</button>
-            </div>`).join('') : '<p class="muted">Ҳоло пардохт нашудааст.</p>'}`,
+            </div>`).join('') : '<p class="muted">Ҳанӯз пардохт нашудааст.</p>'}`,
         foot: c.left > MONEY_EPS
             ? `<button class="btn sale-solid lg" data-pay>${ic('wallet', 17)}Пардохт қабул кардан</button>`
-            : `<button class="btn primary lg" data-new>${ic('plus', 17)}Қарзи нав</button>`
+            : `<button class="btn primary lg" data-new>${ic('plus', 17)}Қарзи нав илова кардан</button>`
     });
     const again = () => setTimeout(() => { if (custBy(key)) debtorView(key); }, 0);
     $$('[data-pay]', m.el).forEach(b => b.onclick = () => { m.close(); payForm(c, { onDone: again }); });
@@ -454,9 +456,9 @@ function payForm(c, { full = false, onDone } = {}) {
     if (!c) return toast('Мизоҷ ёфт нашуд.', 'err');
     const left = c.left;
     const m = formModal({
-        title: full ? 'Пурра бастани қарз' : 'Пардохти қарз', sub: `${c.name} · боқимонда ${money(left)}`,
-        icon: 'wallet', tone: 'tone-sale', submit: full ? 'Қарзро бастан' : 'Сабт кардан', submitClass: 'sale-solid', size: 'sm',
-        body: `${field(`Маблағ (${esc(cur())})`, `<input type="text" inputmode="decimal" data-numpad name="amount" value="${full ? esc(left) : ''}" data-auto autocomplete="off" placeholder="Чанд овард?">`)}
+        title: full ? 'Пурра пардохт шуд' : 'Пардохт қабул', sub: `${c.name} · боқимонда ${money(left)}`,
+        icon: 'wallet', tone: 'tone-sale', submit: full ? 'Қарзро пурра бастан' : 'Сабт кардан', submitClass: 'sale-solid', size: 'sm',
+        body: `${field(`Маблағ (${esc(cur())})`, `<input type="text" inputmode="decimal" data-numpad name="amount" value="${full ? esc(left) : ''}" data-auto autocomplete="off" placeholder="Маблағи пардохт">`)}
             <div class="qchips" data-chips>
                 <button type="button" class="qchip" data-v="${left}">Ҳама (${fmt(left, 2)})</button>
                 ${left >= 2 ? `<button type="button" class="qchip" data-v="${Math.round(left / 2 * 100) / 100}">Нисф (${fmt(left / 2, 2)})</button>` : ''}
@@ -482,7 +484,7 @@ function payForm(c, { full = false, onDone } = {}) {
     const draw = () => {
         const v = num(inp.value), rest = Math.round((left - v) * 100) / 100;
         after.className = 'pay-after ' + (v <= 0 ? '' : rest < -MONEY_EPS ? 'bad' : rest <= MONEY_EPS ? 'good' : '');
-        after.textContent = v <= 0 ? '' : rest < -MONEY_EPS ? `Зиёд аст: қарз ҳамагӣ ${money(left)}` : rest <= MONEY_EPS ? 'Қарз пурра баста мешавад' : `Пас аз пардохт боқӣ мемонад: ${money(rest)}`;
+        after.textContent = v <= 0 ? '' : rest < -MONEY_EPS ? `Зиёд аст: қарз ҳамагӣ ${money(left)}` : rest <= MONEY_EPS ? 'Қарз пурра пардохт мешавад' : `Пас аз пардохт боқӣ: ${money(rest)}`;
     };
     inp.addEventListener('input', draw);
     $('[data-chips]', m.el).addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (b) { inp.value = b.dataset.v; draw(); } });
@@ -496,7 +498,7 @@ function debtForm(d = null, preset = null, onDone) {
     const v = d || { customer: preset ? preset.name : '', phone: preset ? preset.phone : '', amount: '', date: today(), due_date: '', note: '' };
     const paid = d ? d._paid : 0;
     const m = formModal({
-        title: d ? 'Тағйири қарз' : 'Қарзи нав', sub: d ? (d.receipt_code ? `Чек ${showCode(d.receipt_code)}` : 'Қарзи дастӣ') : 'Масалан, қарзи кӯҳна, ки пеш аз барнома буд',
+        title: d ? 'Тағйири қарз' : 'Қарзи нав', sub: d ? (d.receipt_code ? `Чек ${showCode(d.receipt_code)}` : 'Дастӣ ворид шудааст') : 'Қарзи кӯҳна ё аз берун аз барнома',
         icon: 'debt', tone: 'tone-warn',
         body: `<div class="grid2">
                 ${field('Номи мизоҷ', `<input type="text" name="customer" value="${esc(v.customer)}" list="debtFormCust" maxlength="80" data-auto autocomplete="off">`)}
@@ -537,7 +539,7 @@ function debtForm(d = null, preset = null, onDone) {
     const del = $('[data-del]', m.el);
     if (del) del.onclick = async () => {
         const n = S.pays.filter(p => String(p.debt_id) === String(d.id)).length;
-        const yes = await ask({ title: 'Нест кардани қарз', text: `Қарзи ${money(d.amount)}${n ? ` ва ${n} пардохти он` : ''} аз ҷадвал нест мешавад. Мол ва фурӯш тағйир намеёбанд.`, ok: 'Нест кардан', danger: true });
+        const yes = await ask({ title: 'Нест кардани қарз', text: `Қарзи ${money(d.amount)}${n ? ` ва ${n} пардохти он` : ''} аз рӯйхат нест мешавад. Мол ва фурӯш тағйир намеёбанд.`, ok: 'Нест кардан', danger: true });
         if (!yes) return;
         try { await deleteDebt(d); toast('Қарз нест карда шуд'); m.close(); if (onDone) onDone(); }
         catch (e) { m.fail(errText(e)); }

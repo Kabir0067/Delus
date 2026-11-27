@@ -382,22 +382,31 @@ PAGES.rep = {
         return `<div class="filters">
         <div class="seg rep-tabs" role="tablist" aria-label="Бахши ҳисобот">${REP_TABS.map(([k, t, i]) => `<button type="button" role="tab" aria-selected="${S.rep.tab === k}" class="${S.rep.tab === k ? 'on' : ''}" data-act="repTab" data-tab="${k}">${ic(i, 15)}${t}</button>`).join('')}</div>
         <div class="chips">${PERIODS.map(([k, t]) => `<button type="button" class="chip ${!S.rep.from && !S.rep.to && S.rep.k === k ? 'on' : ''}" data-act="repPeriod" data-k="${k}">${t}</button>`).join('')}</div>
-        <div class="toolbar">
-            ${filterBtn(repFilters())}
-            <button class="btn f-csv" data-act="repCsv">${ic('in', 16)}CSV</button>
-            <div class="f-more ${S.fOpen ? 'open' : ''}">
-                <div class="dates">
-                    <input class="input" type="date" data-r="from" value="${esc(S.rep.from)}" aria-label="Аз сана"><span>то</span>
-                    <input class="input" type="date" data-r="to" value="${esc(S.rep.to)}" aria-label="То сана">
-                </div>
-                <select class="input" data-r="loc" aria-label="Анбор ё мағоза">${options([['', 'Ҳамаи анборҳо'], ...S.locations.map(l => [l.id, l.name])], S.rep.loc)}</select>
-                <select class="input" data-r="cat" aria-label="Гурӯҳ">${options([['', 'Ҳамаи гурӯҳҳо'], ...categories().map(c => [c, c])], S.rep.cat)}</select>
-                <select class="input" data-r="ecat" aria-label="Намуди хароҷот">${options([['', 'Ҳамаи хароҷот'], ...ecats.map(c => [c, c])], S.rep.ecat)}</select>
-                <div class="search rep-q">${ic('search', 17)}<input type="search" data-r="q" value="${esc(S.rep.q)}" placeholder="Номи мол" autocomplete="off" aria-label="Номи мол"></div>
-                <button class="btn quiet" data-act="repClear" ${repFilters() ? '' : 'hidden'}>${ic('x', 15)}Тоза кардан</button>
-            </div>
-        </div>
+        <div class="fbar">${filterBtn(repFilters())}<button class="fbtn" data-act="repCsv">${ic('download', 16)}<span>CSV</span></button></div>
+        ${filterPills([
+            ...(S.rep.from || S.rep.to ? [[`Сана: ${S.rep.from ? dotDate(S.rep.from) : '…'} то ${S.rep.to ? dotDate(S.rep.to) : 'имрӯз'}`, 'from,to', 'repDrop']] : []),
+            ...(S.rep.loc ? [[`Ҷой: ${locName(S.rep.loc)}`, 'loc', 'repDrop']] : []),
+            ...(S.rep.cat ? [[`Гурӯҳ: ${S.rep.cat}`, 'cat', 'repDrop']] : []),
+            ...(S.rep.q ? [[`Мол: ${S.rep.q}`, 'q', 'repDrop']] : []),
+            ...(S.rep.ecat ? [[`Хароҷот: ${S.rep.ecat}`, 'ecat', 'repDrop']] : [])
+        ], 'repClear')}
     </div>`;
+    },
+    filters() {
+        const ecats = [...new Set(S.exp.map(e => String(e.category || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru'));
+        filterSheet({
+            title: 'Филтри ҳисобот', unit: 'амалиёт',
+            state: { from: S.rep.from, to: S.rep.to, loc: String(S.rep.loc || ''), cat: S.rep.cat, q: S.rep.q, ecat: S.rep.ecat },
+            sections: [
+                { key: ['from', 'to'], label: 'Сана', type: 'dates' },
+                { key: 'loc', label: 'Анбор ё мағоза', opts: [['', 'Ҳама'], ...S.locations.map(l => [String(l.id), l.name])] },
+                ...(categories().length ? [{ key: 'cat', label: 'Гурӯҳи мол', opts: [['', 'Ҳама'], ...categories().map(c => [c, c])] }] : []),
+                { key: 'q', label: 'Номи мол', type: 'text', ph: 'Масалан: розетка' },
+                ...(ecats.length ? [{ key: 'ecat', label: 'Намуди хароҷот', opts: [['', 'Ҳама'], ...ecats.map(c => [c, c])] }] : [])
+            ],
+            count: st => { const r = report({ ...S.rep, ...st }); return r.list.length + r.exp.length; },
+            apply: st => { Object.assign(S.rep, st); S.limit = PAGE_SIZE; renderPage(); }
+        });
     },
     body() {
         S.csv = null;
@@ -425,11 +434,45 @@ document.addEventListener('pointerover', e => {
 });
 
 /* ---------- 2. Молҳо ---------- */
-function filterProducts() {
-    const f = S.f;
+/* ---------- филтрҳои умумии мол: гурӯҳ ва ранг ---------- */
+const PROD_SORTS = [['', 'Аз рӯи ном'], ['new', 'Навтаринҳо'], ['priceUp', 'Арзонтарин аввал'], ['priceDown', 'Қиматтарин аввал'], ['qtyUp', 'Камтарин дар анбор']];
+function catCounts(list) {
+    const n = new Map();
+    list.forEach(p => { const c = String(p.category || '').trim(); if (c) n.set(c, (n.get(c) || 0) + 1); });
+    return [...n.entries()].sort((a, b) => a[0].localeCompare(b[0], 'ru'));
+}
+/* Рангҳое, ки дар ин молҳо ҳаст: [калид, ном, чанд мол], аввал рангҳои бисёр */
+function colorCounts(list) {
+    const n = new Map(), names = new Map();
+    for (const p of list) for (const k of colorsOf(p)) {
+        n.set(k, (n.get(k) || 0) + 1);
+        if (!names.has(k)) names.set(k, k.startsWith('~') ? String(p.color).trim() : colorName(k));
+    }
+    return [...n.entries()].sort((a, b) => b[1] - a[1]).map(([k, c]) => [k, names.get(k), c]);
+}
+const colorLabel = key => key.startsWith('~') ? String((S.products.find(p => colorsOf(p).includes(key)) || {}).color || colorName(key)).trim() : colorName(key);
+const prodFilterSections = base => [
+    { key: 'cat', label: 'Гурӯҳ', opts: [['', `Ҳама (${fmt(base.length)})`], ...catCounts(base).map(([c, n]) => [c, `${c} (${fmt(n)})`])] },
+    ...(colorCounts(base).length ? [{ key: 'color', label: 'Ранг', opts: [['', 'Ҳама рангҳо'], ...colorCounts(base).map(([k, t, n]) => [k, `${t} (${fmt(n)})`, swatch(k)])] }] : [])
+];
+const prodPills = (keys = ['cat', 'color']) => [
+    ...(keys.includes('cat') && S.f.cat ? [[`Гурӯҳ: ${S.f.cat}`, 'cat']] : []),
+    ...(keys.includes('color') && S.f.color ? [[`Ранг: ${colorLabel(S.f.color)}`, 'color', 'fDrop', swatch(S.f.color)]] : []),
+    ...(keys.includes('sort') && S.f.sort ? [[`Тартиб: ${(PROD_SORTS.find(x => x[0] === S.f.sort) || [, ''])[1]}`, 'sort']] : []),
+    ...(keys.includes('loc') && S.f.loc ? [[`Ҷой: ${locName(S.f.loc)}`, 'loc']] : [])
+];
+/* Филтрҳои нав ба S.f; холӣ — пок */
+function setFilters(st) {
+    for (const [k, v] of Object.entries(st)) { if (v) S.f[k] = v; else delete S.f[k]; }
+    S.limit = PAGE_SIZE;
+    renderPage();
+}
+
+function filterProducts(f = S.f) {
     let list = f.status === 'arch' ? S.products.filter(p => !isActive(p)) : activeProds();
     if (f.q) list = rankBy(list, prodText, f.q);
     if (f.cat) list = list.filter(p => String(p.category).trim() === f.cat);
+    if (f.color) list = list.filter(p => colorsOf(p).includes(f.color));
     if (f.status === 'low') list = list.filter(p => stockState(p) === 'low');
     if (f.status === 'out') list = list.filter(p => ['out', 'neg'].includes(stockState(p)));
     if (f.status === 'photo') list = list.filter(p => !imgSrc(p));
@@ -444,12 +487,18 @@ function filterProducts() {
     return f.q && !f.sort ? list : [...list].sort(sorters[f.sort] || sorters.name);
 }
 
+/* Гурӯҳ ва ранги мол дар корт: «● Сафед · Розетки» */
+const prodSub = p => {
+    const k = colorsOf(p)[0];
+    return `${k ? `<span class="p-col">${swatch(k)}${esc(colorLabel(k))}</span>` : ''}${esc(p.category || (k ? '' : 'Бе гурӯҳ'))}`;
+};
+
 /* Ҳолати «Интихоб»: корт тамоман тугмаи интихоб мешавад */
 function productCardSel(p) {
     const on = S.sel.has(String(p.id));
     return `<button type="button" class="pcard pcard-sel ${on ? 'on' : ''}" data-act="selToggle" data-id="${esc(p.id)}" aria-pressed="${on}">
         <span class="pcard-img">${thumb(p, 'cover')}<span class="sel-box">${ic('check', 16)}</span>${stockPill(p)}</span>
-        <span class="pcard-b"><span class="pcard-n"><b>${esc(p.name)}</b><small>${esc(p.category || 'Бе гурӯҳ')}</small></span>
+        <span class="pcard-b"><span class="pcard-n"><b>${esc(p.name)}</b><small>${prodSub(p)}</small></span>
             <span class="pcard-p"><span class="sell">${fmt(p.sale_price, 2)} <small>${esc(cur())}</small></span></span></span>
     </button>`;
 }
@@ -464,7 +513,7 @@ function productCard(p) {
             ${stockPill(p)}
         </button>
         <div class="pcard-b">
-            <button class="pcard-n" data-act="prodView" data-id="${id}"><b>${esc(p.name)}</b><small>${esc(p.category || 'Бе гурӯҳ')}</small></button>
+            <button class="pcard-n" data-act="prodView" data-id="${id}"><b>${esc(p.name)}</b><small>${prodSub(p)}</small></button>
             <div class="pcard-p">
                 <div class="sell">${fmt(p.sale_price, 2)} <small>${esc(cur())}</small></div>
                 <div><small>Нархи харид</small><b>${fmt(p.purchase_price, 2)}</b></div>
@@ -482,20 +531,27 @@ function productCard(p) {
 PAGES.prod = {
     head: () => `<div class="toolbar">
         ${searchBox('Ҷустуҷӯи мол', true)}
-        ${filterBtn(+!!S.f.cat)}
         <button class="btn sel-btn ${S.selOn ? 'on' : ''}" data-act="selMode" aria-pressed="${S.selOn}" title="Якчанд молро интихоб кардан: ба бойгонӣ ё нест кардан">${ic(S.selOn ? 'x' : 'check', 16)}<span>${S.selOn ? 'Бекор' : 'Интихоб'}</span></button>
-        <button class="btn primary" data-act="prodNew">${ic('plus', 16)}Моли нав</button>
-        <div class="f-more ${S.fOpen ? 'open' : ''}">
-            ${catSelect()}
-            <select class="input" data-f="sort" aria-label="Тартиб">${options([['name', 'Аз рӯи ном'], ['new', 'Навтаринҳо'], ['priceDown', 'Нарх: аз баланд'], ['priceUp', 'Нарх: аз паст'], ['qtyUp', 'Миқдор: аз кам']], S.f.sort || 'name')}</select>
-        </div>
-        ${chips('status', [['', 'Ҳама'], ['low', 'Кам мондааст'], ['out', 'Тамом шудааст'], ['photo', 'Бе акс'], ['arch', 'Бойгонӣ']])}
-    </div>`,
+        <button class="btn primary" data-act="prodNew" aria-label="Моли нав">${ic('plus', 16)}Моли нав</button>
+    </div>
+    <div class="fbar">${filterBtn(['cat', 'color', 'sort'].filter(k => S.f[k]).length)}
+        ${chips('status', [['', 'Ҳама'], ['low', 'Кам мондааст'], ['out', 'Тамом шудааст'], ['photo', 'Бе акс'], ['arch', 'Бойгонӣ']])}</div>
+    ${filterPills(prodPills(['cat', 'color', 'sort']))}`,
+    filters() {
+        const base = S.f.status === 'arch' ? S.products.filter(p => !isActive(p)) : activeProds();
+        filterSheet({
+            title: 'Филтри молҳо',
+            state: { cat: S.f.cat || '', color: S.f.color || '', sort: S.f.sort || '' },
+            sections: [...prodFilterSections(base), { key: 'sort', label: 'Тартиб', opts: PROD_SORTS }],
+            count: st => filterProducts({ ...S.f, ...st }).length,
+            apply: setFilters
+        });
+    },
     body() {
         const list = filterProducts();
         if (!list.length) {
             if (S.f.status === 'arch') return empty('Бойгонӣ холӣ аст');
-            if (S.f.q || S.f.cat || S.f.status) return empty('Чунин мол ёфт нашуд', 'Шарти ҷустуҷӯро иваз кунед.');
+            if (S.f.q || S.f.cat || S.f.color || S.f.status) return empty('Чунин мол ёфт нашуд', 'Ҷустуҷӯ ё филтрро иваз кунед.', '<button class="btn" data-act="fReset">Ҳамаро пок кардан</button>');
             return empty('Ҳоло мол нест', 'Моли аввалро илова кунед.', `<button class="btn primary" data-act="prodNew">${ic('plus', 16)}Моли нав</button>`);
         }
         const shown = list.slice(0, S.limit);
@@ -517,11 +573,11 @@ PAGES.prod = {
 };
 
 /* ---------- 3. Анбор ---------- */
-function filterStock() {
-    const f = S.f;
+function filterStock(f = S.f) {
     let list = activeProds();
     if (f.q) list = rankBy(list, prodText, f.q);
     if (f.cat) list = list.filter(p => String(p.category).trim() === f.cat);
+    if (f.color) list = list.filter(p => colorsOf(p).includes(f.color));
     if (f.loc) list = list.filter(p => qtyAt(p.id, f.loc) !== 0);
     if (f.only === 'need') list = list.filter(p => stockState(p) !== 'ok');
     if (f.only === 'neg') list = list.filter(p => stockState(p) === 'neg');
@@ -536,12 +592,21 @@ const cellClass = q => q < 0 ? 'neg' : q === 0 ? 'zero' : '';
 PAGES.stock = {
     head: () => `<div class="toolbar">
         ${searchBox('Ҷустуҷӯи мол', true)}
-        ${filterBtn(+!!S.f.cat)}
-        <div class="f-more ${S.fOpen ? 'open' : ''}">${catSelect()}</div>
         <button class="btn t-move" data-act="move">${ic('move', 16)}Интиқол</button>
         <button class="btn" data-act="fix" title="Молро шуморед ва миқдори воқеиро нависед">${ic('fix', 16)}Шумориш</button>
-        ${chips('only', [['', 'Ҳама молҳо'], ['need', 'Кам мондааст'], ['idle', 'Як моҳ савдо нашуд'], ['neg', 'Камомад (манфӣ)']])}
-    </div>`,
+    </div>
+    <div class="fbar">${filterBtn(['cat', 'color'].filter(k => S.f[k]).length)}
+        ${chips('only', [['', 'Ҳама молҳо'], ['need', 'Кам мондааст'], ['idle', 'Як моҳ савдо нашуд'], ['neg', 'Камомад (манфӣ)']])}</div>
+    ${filterPills(prodPills(['cat', 'color', 'loc']))}`,
+    filters() {
+        filterSheet({
+            title: 'Филтри анбор',
+            state: { cat: S.f.cat || '', color: S.f.color || '' },
+            sections: prodFilterSections(activeProds()),
+            count: st => filterStock({ ...S.f, ...st }).length,
+            apply: setFilters
+        });
+    },
     body() {
         const locs = activeLocs();
         const sums = locs.map(l => {
@@ -552,7 +617,7 @@ PAGES.stock = {
                 <span><b>${esc(l.name)}</b><small class="num">${qty(units)} адад · ${fmt(val, 0)} ${esc(cur())}</small></span></button>`;
         }).join('');
         const list = filterStock();
-        if (!list.length) return `<div class="loc-sums">${sums}</div>` + empty('Чунин мол ёфт нашуд');
+        if (!list.length) return `<div class="loc-sums">${sums}</div>` + empty('Чунин мол ёфт нашуд', 'Ҷустуҷӯ ё филтрро иваз кунед.', '<button class="btn" data-act="fReset">Ҳамаро пок кардан</button>');
         const shown = list.slice(0, S.limit);
         return `<div class="loc-sums">${sums}</div>
         <div class="table-wrap stock-table"><table class="tbl">
@@ -577,15 +642,13 @@ PAGES.stock = {
 
 /* ---------- 4. Амалиётҳо ---------- */
 const TX_WHEN = [['', 'Ҳама'], ['today', 'Имрӯз'], ['yest', 'Дирӯз'], ['7d', '7 рӯз'], ['month', 'Ин моҳ']];
-function txRange() {
-    const f = S.f;
+function txRange(f = S.f) {
     if (f.from || f.to) return [f.from || '', f.to || ''];
     if (f.when === 'yest') return [dayShift(-1), dayShift(-1)];
     return f.when ? periodRange(f.when) : ['', ''];
 }
-function filterTx() {
-    const f = S.f;
-    const [from, to] = txRange();
+function filterTx(f = S.f) {
+    const [from, to] = txRange(f);
     let list = from || to ? inRange(S.txSorted, from, to) : S.txSorted;
     if (f.type) list = list.filter(x => x.type === f.type);
     if (f.loc) list = list.filter(x => String(x.from_location_id) === String(f.loc) || String(x.to_location_id) === String(f.loc));
@@ -609,19 +672,26 @@ function txQty(x, p) {
 }
 
 PAGES.tx = {
-    head: () => `<div class="toolbar">
-        ${searchBox('Ҷустуҷӯ')}
-        ${filterBtn([S.f.type, S.f.loc, S.f.from, S.f.to].filter(Boolean).length)}
-        <div class="f-more ${S.fOpen ? 'open' : ''}">
-        <select class="input" data-f="type" aria-label="Навъи амалиёт">${options([['', 'Ҳамаи амалиётҳо'], ...Object.entries(TYPES).map(([k, v]) => [k, v.t])], S.f.type || '')}</select>
-        <select class="input" data-f="loc" aria-label="Ҷой">${options([['', 'Ҳамаи ҷойҳо'], ...S.locations.map(l => [l.id, l.name])], S.f.loc || '')}</select>
-        <div class="dates">
-            <input class="input" type="date" data-f="from" value="${esc(S.f.from || '')}" aria-label="Аз сана"><span>то</span>
-            <input class="input" type="date" data-f="to" value="${esc(S.f.to || '')}" aria-label="То сана">
-        </div>
-        </div>
-        ${chips('when', TX_WHEN)}
-    </div>`,
+    head: () => `<div class="toolbar">${searchBox('Мол, рақами чек ё эзоҳ')}</div>
+    <div class="fbar">${filterBtn([S.f.type, S.f.loc, S.f.from || S.f.to].filter(Boolean).length)}${chips('when', TX_WHEN)}</div>
+    ${filterPills([
+        ...(S.f.type ? [[(TYPES[S.f.type] || {}).t || S.f.type, 'type']] : []),
+        ...(S.f.loc ? [[`Ҷой: ${locName(S.f.loc)}`, 'loc']] : []),
+        ...(S.f.from || S.f.to ? [[`Сана: ${S.f.from ? dotDate(S.f.from) : '…'} то ${S.f.to ? dotDate(S.f.to) : 'имрӯз'}`, 'from,to']] : [])
+    ])}`,
+    filters() {
+        filterSheet({
+            title: 'Филтри амалиётҳо', unit: 'сабт',
+            state: { type: S.f.type || '', loc: S.f.loc || '', from: S.f.from || '', to: S.f.to || '' },
+            sections: [
+                { key: 'type', label: 'Навъ', opts: [['', 'Ҳама'], ...Object.entries(TYPES).map(([k, v]) => [k, v.t, `<span class="tile sm ${k === 'EXPENSE' ? 'tone-exp' : k}">${ic(v.icon, 13)}</span>`])] },
+                { key: 'loc', label: 'Ҷой', opts: [['', 'Ҳамаи ҷойҳо'], ...S.locations.map(l => [String(l.id), l.name])] },
+                { key: ['from', 'to'], label: 'Сана', type: 'dates' }
+            ],
+            count: st => filterTx({ ...S.f, ...st, ...(st.from || st.to ? { when: '' } : {}) }).length,
+            apply: st => { if (st.from || st.to) delete S.f.when; setFilters(st); }
+        });
+    },
     body() {
         const list = filterTx();
         const of = t => list.filter(x => x.type === t);
@@ -673,7 +743,7 @@ const HELP = [
     ['Хароҷотро чӣ тавр сабт мекунам?', 'Дар саҳифаи асосӣ тугмаи «Хароҷот»-ро пахш кунед ва маблағ, сана ва сабабро нависед: иҷора, маош, нақлиёт ва ғайра. Хароҷот аз фоида кам мешавад ва дар саҳифаи асосӣ нишон дода мешавад.'],
     ['Молро ба қарз (насия) чӣ тавр мефурӯшам?', 'Дар тирезаи «Фурӯш» молро интихоб кунед ва дар қисми «Пардохт» «Ба қарз (насия)»-ро пахш кунед. Номи мизоҷ ва телефонашро нависед. Агар мизоҷ ҳозир як қисми пулро медиҳад, онро дар «Ҳозир медиҳад» нависед. Агар хоҳед, рӯзеро гузоред, ки то он пулро медиҳад. Мол аз анбор кам мешавад ва қарз дар бахши «Қарз» пайдо мешавад.'],
     ['Мизоҷ як қисми қарзашро овард. Чӣ кор кунам?', 'Бахши «Қарз»-ро кушоед, мизоҷро ёбед ва «Пардохт»-ро пахш кунед. Маблағеро, ки овард, нависед ва «Сабт кардан»-ро пахш кунед. Боқимонда худ аз худ кам мешавад. Агар мизоҷ якчанд қарз дошта бошад, пул аввал ба қарзи кӯҳнатарин меравад.'],
-    ['Қарзро чӣ тавр пурра мебандам?', 'Мизоҷро кушоед ва «Пурра бастан»-ро пахш кунед: маблағи боқимонда худаш навишта мешавад. Баъди сабт қарз ба рӯйхати «Пӯшида» мегузарад, вале таърихаш мемонад.'],
+    ['Қарзро чӣ тавр пурра мебандам?', 'Мизоҷро кушоед ва «Пурра пардохт шуд»-ро пахш кунед: маблағи боқимонда худаш навишта мешавад. Баъди сабт мизоҷ ба рӯйхати «Пардохт шуд» мегузарад, вале таърихаш мемонад.'],
     ['Чеки насияро чӣ тавр ба мизоҷ мефиристам?', 'Дар бахши «Қарз» дар қатори мизоҷ «Чек»-ро пахш кунед. Барнома чекро ҳамчун акс месозад: номи харидор, молҳо, пардохтҳо ва боқимонда. Онро ба Telegram ё WhatsApp фиристодан ё дар телефон нигоҳ доштан мумкин аст.'],
     ['Қарзи кӯҳнаро чӣ тавр сабт мекунам?', 'Агар мизоҷ пеш аз барнома қарздор буд, дар бахши «Қарз» «Қарзи нав»-ро пахш кунед ва ном, телефон, маблағ ва санаро нависед. Ин қарз ба пули ин давра таъсир намекунад, чунки мол пештар дода шуда буд.'],
     ['Агар мизоҷ моли ба қарз гирифтаро баргардонад?', 'Фурӯшро дар «Амалиётҳо» кушоед ва «Бозгашт»-ро пахш кунед. Мол ба анбор бармегардад ва маблағи он аз қарзи мизоҷ худ аз худ кам мешавад.'],

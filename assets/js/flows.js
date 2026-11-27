@@ -27,7 +27,7 @@ function mountPicker(root, { onPick, onNew, onCode, stockAt, price, badge, first
         <input type="search" data-auto placeholder="Номи мол ё штрихкод" autocomplete="off" enterkeyhint="search" aria-label="Ҷустуҷӯи мол">
         <button type="button" class="search-x" data-clear aria-label="Тоза кардани ҷустуҷӯ" hidden>${ic('x', 15)}</button>
         ${onCode ? `<button type="button" class="search-scan" data-scan aria-label="Скани штрихкод бо камера" title="Скан бо камера">${ic('scan', 20)}</button>` : ''}</div>
-        <div class="pick-grid"></div><p class="pick-more" hidden></p></div>`;
+        <div class="pick-grid"></div><button type="button" class="btn quiet block pick-more" hidden></button></div>`;
     const inp = $('input', root), grid = $('.pick-grid', root), more = $('.pick-more', root), clr = $('[data-clear]', root);
     if (onCode) $('[data-scan]', root).onclick = () => scanCode({ title: 'Скан: ҳар қуттӣ як адад', multi: true, onCode });
     let items = [], hot = 0;
@@ -59,7 +59,7 @@ function mountPicker(root, { onPick, onNew, onCode, stockAt, price, badge, first
         clr.hidden = !q;
         const all = activeProds().length;
         more.hidden = !!q || all <= found.length;
-        more.textContent = `Боз ${fmt(all - found.length)} мол ҳаст. Барои ёфтан номашро нависед ё штрихкодро скан кунед.`;
+        more.textContent = `Боз ${fmt(all - found.length)} мол нишон додан`;
     }
     /* Пахши плитка ҷустуҷӯро нигоҳ медорад: боз пахш — боз як адад. Enter (клавиатура) илова мекунад ва барои моли навбатӣ тоза мекунад. */
     function choose(i, clear) {
@@ -72,6 +72,7 @@ function mountPicker(root, { onPick, onNew, onCode, stockAt, price, badge, first
         if (clear && q && matchMedia('(hover: hover)').matches) inp.focus();
     }
     clr.addEventListener('click', () => { inp.value = ''; hot = 0; draw(); inp.focus(); });
+    more.addEventListener('click', () => { max += 36; draw(); });
     inp.addEventListener('input', () => { hot = 0; draw(); });
     inp.addEventListener('keydown', e => {
         if (e.key === 'Enter') { e.preventDefault(); if (inp.value.trim()) choose(hot, true); }
@@ -166,19 +167,29 @@ function docModal(kind, preset = null, start = {}) {
     const lines = [];
     const saleLoc = start.loc || (preset ? saleLocFor(preset) : saleLocFor(null));
 
+    /* Телефон ва планшет: қадами 1 — каталог, қадами 2 — сабад ва пардохт. Компютер: ҳарду дар як экран. */
+    const STEPS = {
+        sale: ['Молро интихоб кунед', 'Ҳар пахш як адад илова мекунад', 'Санҷед ва фурӯшед', 'Миқдор, нарх ва пулро санҷед'],
+        buy: ['Моли омадаро интихоб кунед', 'Агар дар рӯйхат нест, номашро нависед', 'Миқдор ва нархро нависед', 'Баъд «Сабт кардан»-ро пахш кунед'],
+        move: ['Молро интихоб кунед', 'Ҳар пахш як адад илова мекунад', 'Аз куҷо ба куҷо', 'Миқдорро санҷед ва сабт кунед']
+    }[kind];
+    const stepH = (n, t, sub) => `<div class="step-h"><span class="step-n">${n}</span><span><b>${t}</b><small>${sub}</small></span></div>`;
     const locHtml = kind === 'sale' ? group('Аз куҷо мефурӯшед', placeSeg('loc', saleLoc))
         : kind === 'buy' ? group('Ба куҷо омад', placeSeg('loc', wh.id))
             : `<div class="route">${group('Аз куҷо', placeSeg('from', wh.id))}${group('Ба куҷо', placeSeg('to', toDefault.id))}</div>`;
 
     const m = formModal({
-        title: DOCS[kind].title, sub: DOCS[kind].sub, icon: DOCS[kind].icon, tone: DOCS[kind].tone, size: 'xl', footClass: 'wrap',
+        title: DOCS[kind].title, icon: DOCS[kind].icon, tone: DOCS[kind].tone, size: 'xl', footClass: 'wrap',
+        submit: kind === 'sale' ? 'Фурӯхтан' : kind === 'move' ? 'Интиқол кардан' : 'Сабт кардан',
         submitClass: kind === 'sale' ? 'sale-solid' : 'primary',
-        footExtra: '<div class="total" data-tocart role="button" tabindex="0" aria-label="Ба сабад рафтан"><span data-count></span><span><b data-total></b><small data-extra></small></span></div>',
+        footExtra: `<div class="total" data-tocart role="button" tabindex="0" aria-label="Ба сабад рафтан"><span data-count></span><span><b data-total></b><small data-extra></small></span></div>
+            <button type="button" class="btn lg step-back" data-back>${ic('back', 17)}Боз мол</button>
+            <button type="button" class="btn ${kind === 'sale' ? 'sale-solid' : 'primary'} lg step-next" data-next></button>`,
         body: `<div class="doc">
-            <div class="doc-l">${locHtml}
-                ${group(`Молҳо <em>(${kind === 'buy' ? 'пахш кунед ё номи моли навро нависед' : 'ҳар пахш як адад'})</em>`, '<div data-pick></div>')}
-            </div>
+            <div class="doc-l">${stepH(1, STEPS[0], STEPS[1])}<div data-pick></div></div>
             <div class="doc-r" data-cart>
+                ${stepH(2, STEPS[2], STEPS[3])}
+                ${locHtml}
                 <div class="doc-cart-h"><span>${ic(kind === 'move' ? 'move' : 'sale', 16)}${kind === 'sale' ? 'Сабад' : kind === 'buy' ? 'Моли омада' : 'Барои интиқол'}</span><small data-count2></small></div>
                 <div class="lines" data-lines></div>
                 ${kind === 'sale' ? payBlock() : ''}
@@ -193,8 +204,23 @@ function docModal(kind, preset = null, start = {}) {
     const box = $('[data-lines]', m.el), pick = $('[data-pick]', m.el);
     const sel = n => $(`[name=${n}]`, m.el);
     if (kind === 'sale') wirePay(m.el, () => drawTotals());
-    const toCart = () => $('[data-cart]', m.el).scrollIntoView({ block: 'start', behavior: 'smooth' });
+    const stepped = () => matchMedia('(max-width: 1023px)').matches;
+    let step = 0;
+    const setStep = n => {
+        step = n;
+        m.sheet.classList.toggle('s1', n === 1);
+        m.sheet.classList.toggle('s2', n === 2);
+        $('.sheet-b', m.el).scrollTop = 0;
+    };
+    const toCart = () => {
+        if (stepped()) { if (lines.length) setStep(2); else toast('Аввал молро пахш кунед.', 'err'); }
+        else $('[data-cart]', m.el).scrollIntoView({ block: 'start', behavior: 'smooth' });
+    };
     $('[data-tocart]', m.el).addEventListener('click', toCart);
+    $('[data-next]', m.el).onclick = toCart;
+    $('[data-back]', m.el).onclick = () => setStep(1);
+    /* Тугмаи «қафо»-и телефон дар сабад: ба каталог бармегардад, тирезаро намебандад */
+    m.onBack = () => { if (step === 2 && stepped()) { setStep(1); return true; } return false; };
     const srcLoc = () => kind === 'move' ? sel('from').value : sel('loc').value;
     const lineSum = l => num(l.q) * num(kind === 'sale' ? l.price : l.cost);
 
@@ -226,6 +252,9 @@ function docModal(kind, preset = null, start = {}) {
         });
         const n = lines.length;
         $('[data-count]', m.el).textContent = n ? `${fmt(n)} мол` : 'Сабад холӣ';
+        const next = $('[data-next]', m.el);
+        next.innerHTML = n ? `Давом: ${kind === 'sale' ? 'сабад' : 'рӯйхат'} (${fmt(n)})${ic('right', 18)}` : 'Молро пахш кунед';
+        next.classList.toggle('ready', n > 0);
         $('[data-count2]', m.el).textContent = n ? `${fmt(n)} мол` : '';
         if (pick.refresh) pick.refresh();
         const total = $('[data-total]', m.el), extra = $('[data-extra]', m.el);
@@ -326,6 +355,7 @@ function docModal(kind, preset = null, start = {}) {
         return { stop: true };
     };
     mountPicker(pick, {
+        max: 24,
         stockAt: srcLoc,
         price: kind === 'move' ? null : p => kind === 'buy' ? num(p.purchase_price) : num(p.sale_price),
         badge: p => { const l = lines.find(x => String(x.p.id) === String(p.id)); return l ? '×' + qty(num(l.q)) : ''; },
@@ -335,6 +365,7 @@ function docModal(kind, preset = null, start = {}) {
         onNew: kind === 'buy' ? name => productForm(null, { name, noOpening: true, onSaved: p => addLine(p) }) : null
     });
     if (preset) addLine(preset, num(start.q) || 1, start.price); else drawLines();
+    setStep(start.step || (preset ? 2 : 1));
     return m;
 }
 
@@ -468,7 +499,7 @@ function quickSale(p0) {
     $('[data-more]', m.el).onclick = () => {
         const start = { q: num(q.value) || 1, price: pr.value, loc: sel('loc').value };
         m.close();
-        docModal('sale', p, start);
+        docModal('sale', p, { ...start, step: 1 });
     };
     draw();
     return m;
@@ -690,7 +721,11 @@ function productForm(p = null, { name = '', barcode = '', noOpening = false, onS
     const v = p || { name, unit: 'дона', barcode };
     const units = UNITS.includes(v.unit) || !v.unit ? UNITS : [v.unit, ...UNITS];
     let photo = null, removed = false;
-    const extra = v.series || v.color || v.description || num(v.mesta) || num(v.taga) || num(v.units_per_box);
+    const extra = v.series || v.description || num(v.mesta) || num(v.taga) || num(v.units_per_box);
+    /* рангҳои маъмул бо доира + рангҳое, ки дар молҳо ҳаст */
+    const usedColors = [...new Set(S.products.map(x => String(x.color || '').trim()).filter(Boolean))];
+    const colorChips = ['white', 'black', 'grey', 'silver', 'gold', 'beige', 'brown', 'red', 'blue', 'green']
+        .map(k => `<button type="button" class="qchip col" data-col="${esc(colorName(k))}">${swatch(k)}${esc(colorName(k))}</button>`).join('');
     const numVal = x => (x === '' || x === undefined || x === null) ? '' : esc(x);
 
     const body = `
@@ -704,6 +739,7 @@ function productForm(p = null, { name = '', barcode = '', noOpening = false, onS
         <input type="file" accept="image/*" hidden data-file>
         <input type="file" accept="image/*" capture="environment" hidden data-cam>
         ${field('Номи мол', `<input type="text" name="name" value="${esc(v.name)}" maxlength="200" data-auto autocomplete="off" required>`)}
+        ${editing ? '' : '<div class="name-sug" data-sug hidden></div>'}
         <div class="grid2">
             ${field('Гурӯҳ', `<input type="text" name="category" value="${esc(v.category)}" list="catList" maxlength="80" autocomplete="off"><datalist id="catList">${categories().map(c => `<option value="${esc(c)}"></option>`).join('')}</datalist>`)}
             ${field('Воҳид', `<select name="unit">${options(units.map(u => [u, u]), v.unit || 'дона')}</select>`)}
@@ -712,6 +748,8 @@ function productForm(p = null, { name = '', barcode = '', noOpening = false, onS
             ${field('Нархи харид', `<input type="text" inputmode="decimal" name="purchase_price" value="${numVal(v.purchase_price)}" data-numpad autocomplete="off">`)}
             ${field('Нархи фурӯш', `<input type="text" inputmode="decimal" name="sale_price" value="${numVal(v.sale_price)}" data-numpad autocomplete="off">`)}
         </div>
+        ${field('Ранг <em>(ихтиёрӣ)</em>', `<input type="text" name="color" value="${esc(v.color)}" maxlength="40" list="colorList" autocomplete="off" placeholder="Масалан: Сафед"><datalist id="colorList">${usedColors.map(c => `<option value="${esc(c)}"></option>`).join('')}</datalist>`)}
+        <div class="qchips col-chips" data-cols>${colorChips}</div>
         ${field('Штрихкод <em>(ихтиёрӣ)</em>', `<span class="in-btn"><input type="text" name="barcode" value="${esc(v.barcode || '')}" inputmode="numeric" maxlength="200" autocomplete="off" placeholder="Рақами зери штрихкод">
             <button type="button" class="btn t-buy" data-scancode>${ic('scan', 18)}Скан</button></span>`, 'Штрихкоди қуттиро скан кунед: баъд мол бо камера дар як сония ёфт мешавад.')}
         ${!editing && !noOpening ? `<div class="grid2">
@@ -726,13 +764,12 @@ function productForm(p = null, { name = '', barcode = '', noOpening = false, onS
             </div>
             <div class="grid2">
                 ${field('Силсила', `<input type="text" name="series" value="${esc(v.series)}" maxlength="80" autocomplete="off">`)}
-                ${field('Ранг', `<input type="text" name="color" value="${esc(v.color)}" maxlength="40" autocomplete="off">`)}
+                ${field('Дар як қуттӣ', `<input type="text" inputmode="decimal" name="units_per_box" data-numpad value="${numVal(v.units_per_box)}" autocomplete="off">`)}
             </div>
             <div class="grid2">
                 ${field('Шумораи ҷойҳо', `<input type="text" inputmode="numeric" name="mesta" value="${numVal(v.mesta)}" autocomplete="off">`)}
                 ${field('Шумораи тугмаҳо', `<input type="text" inputmode="numeric" name="taga" value="${numVal(v.taga)}" autocomplete="off">`)}
             </div>
-            ${field('Дар як қуттӣ', `<input type="text" inputmode="decimal" name="units_per_box" data-numpad value="${numVal(v.units_per_box)}" autocomplete="off">`)}
             ${field('Тавсиф', `<textarea name="description" maxlength="500">${esc(v.description)}</textarea>`)}
         </details>
         ${editing ? `<div class="danger-z">
@@ -846,6 +883,45 @@ function productForm(p = null, { name = '', barcode = '', noOpening = false, onS
         };
     });
     rm.onclick = () => { photo = null; removed = true; show(''); };
+
+    /* Ранг: як пахш */
+    const colIn = $('[name=color]', m.el), cols = $('[data-cols]', m.el);
+    const markCol = () => { const k = colorKeys(colIn.value)[0]; $$('[data-col]', cols).forEach(b => b.classList.toggle('on', !!k && colorKeys(b.dataset.col)[0] === k)); };
+    cols.addEventListener('click', e => { const b = e.target.closest('[data-col]'); if (!b) return; colIn.value = colIn.value && b.classList.contains('on') ? '' : b.dataset.col; markCol(); });
+    colIn.addEventListener('input', markCol);
+    markCol();
+
+    /* Моли нав: ҳангоми навиштани ном молҳои монанд пешниҳод мешаванд. Пахш — маълумоташ пур мешавад (номро иваз кардан мумкин). */
+    const sug = $('[data-sug]', m.el), nameIn = $('[name=name]', m.el);
+    if (sug) {
+        let timer = 0;
+        const drawSug = () => {
+            const q = nameIn.value.trim();
+            const found = q.length >= 2 ? rankBy(activeProds(), prodText, q).slice(0, 5) : [];
+            sug.hidden = !found.length;
+            if (!found.length) return;
+            const same = found.find(x => norm(x.name) === norm(q));
+            sug.innerHTML = `<p class="sug-h">${same ? `«${esc(same.name)}» аллакай ҳаст.` : 'Монанд дар рӯйхат ҳаст.'} Пахш кунед: маълумоташ пур мешавад, номро иваз кардан мумкин.</p>
+                ${found.map(x => `<button type="button" class="sug" data-sug-id="${esc(x.id)}">${thumb(x, 'sm')}
+                    <span class="mini-b"><b>${esc(x.name)}</b><small>${esc([x.category, `${qty(qtyAll(x.id))} ${unitOf(x)}`, x.sale_price !== '' ? money(x.sale_price) : ''].filter(Boolean).join(' · '))}</small></span>${ic('right', 15)}</button>`).join('')}`;
+        };
+        nameIn.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(drawSug, 120); });
+        sug.addEventListener('click', e => {
+            const b = e.target.closest('[data-sug-id]');
+            if (!b) return;
+            const x = prodBy(b.dataset.sugId);
+            if (!x) return;
+            const put = (n, val) => { const el = $(`[name=${n}]`, m.el); if (el && (n === 'name' || n === 'unit' || String(el.value).trim() === '') && val !== '' && val !== undefined) el.value = val; };
+            put('name', x.name); put('category', x.category); put('unit', x.unit); put('color', x.color); put('series', x.series);
+            put('units_per_box', x.units_per_box); put('purchase_price', x.purchase_price); put('sale_price', x.sale_price);
+            markCol();
+            sug.hidden = true;
+            nameIn.focus();
+            nameIn.setSelectionRange(nameIn.value.length, nameIn.value.length);
+            toast('Маълумот пур шуд. Агар ин моли дигар бошад, номашро иваз кунед.');
+        });
+        if (nameIn.value) drawSug();
+    }
     $('[data-scancode]', m.el).onclick = async () => {
         const code = await scanCode({ title: 'Скани штрихкоди мол' });
         if (!code) return;
@@ -1213,6 +1289,12 @@ const ACT = {
     homePeriod(el) { S.homeK = el.dataset.k; renderPage(); },
     repPeriod(el) { Object.assign(S.rep, { k: el.dataset.k, from: '', to: '' }); renderPage(); },
     repClear() { Object.assign(S.rep, { from: '', to: '', loc: '', cat: '', q: '', ecat: '' }); renderPage(); },
+    /* Филтр: тиреза, пок кардани як филтр ё ҳамааш */
+    fOpen() { const pg = PAGES[S.page]; if (pg && pg.filters) pg.filters(); },
+    fDrop(el) { el.dataset.key.split(',').forEach(k => delete S.f[k]); S.limit = PAGE_SIZE; renderPage(); },
+    fDropAll() { ['cat', 'color', 'sort', 'loc', 'type', 'from', 'to'].forEach(k => delete S.f[k]); S.limit = PAGE_SIZE; renderPage(); },
+    fReset() { S.f = {}; S.limit = PAGE_SIZE; renderPage(); },
+    repDrop(el) { el.dataset.key.split(',').forEach(k => { S.rep[k] = ''; }); renderPage(); },
     repTab(el) { S.rep.tab = el.dataset.tab; renderPage(); window.scrollTo(0, 0); },
     repOpen(el) {
         Object.assign(S.rep, { tab: el.dataset.tab, k: S.homeK, from: '', to: '' });

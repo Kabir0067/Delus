@@ -89,7 +89,9 @@ window.addEventListener('popstate', () => {
         return;
     }
     if (Modal.stack.length) {
-        Modal.remove(Modal.top());
+        /* тиреза метавонад «қафо»-ро худаш истифода барад (масалан, фурӯш: аз сабад ба каталог) */
+        const top = Modal.top();
+        if (!(top.onBack && top.onBack())) Modal.remove(top);
         if (Modal.stack.length) { try { history.pushState({ modal: true }, ''); } catch (e) { } }
         return;
     }
@@ -351,6 +353,59 @@ function moreSheet() {
     return m;
 }
 
+/* ==================================================================
+   ФИЛТР: тирезаи калон бо тугмаҳо, на рӯйхатҳои кушодашаванда
+   sections: [{ key, label, opts: [[value, text, html]] }]      — тугмаҳо (value '' = ҳама)
+             [{ key: ['from', 'to'], label, type: 'dates' }]    — аз сана то сана
+             [{ key, label, type: 'text', ph }]                 — матн
+   state — филтрҳои ҳозира, count(state) — чанд натиҷа мешавад, apply(state) — истифода
+   ================================================================== */
+function filterSheet({ title = 'Филтр', sections, state, count, apply, unit = 'мол' }) {
+    const st = { ...state };
+    const keys = sections.flatMap(s => Array.isArray(s.key) ? s.key : [s.key]);
+    const m = Modal.open({
+        title, size: 'fs', icon: 'filter', tone: 'tone-buy',
+        body: '<div class="fs" data-fs></div>',
+        foot: `<button type="button" class="btn lg" data-reset>${ic('x', 16)}Тоза кардан</button><button type="button" class="btn primary lg" data-apply></button>`
+    });
+    const box = $('[data-fs]', m.el), btn = $('[data-apply]', m.el);
+    const label = () => {
+        const n = count(st);
+        btn.textContent = n ? `Нишон додан: ${fmt(n)} ${unit}` : 'Ҳеҷ чиз ёфт намешавад';
+        btn.classList.toggle('none', !n);
+    };
+    const draw = () => {
+        box.innerHTML = sections.map(s => {
+            if (s.type === 'dates') return `<section class="fs-s"><h4>${esc(s.label)}</h4><div class="dates">
+                <input class="input" type="date" data-in="${s.key[0]}" value="${esc(st[s.key[0]] || '')}" aria-label="Аз сана"><span>то</span>
+                <input class="input" type="date" data-in="${s.key[1]}" value="${esc(st[s.key[1]] || '')}" aria-label="То сана"></div></section>`;
+            if (s.type === 'text') return `<section class="fs-s"><h4>${esc(s.label)}</h4>
+                <input class="input" type="search" data-in="${s.key}" value="${esc(st[s.key] || '')}" placeholder="${esc(s.ph || '')}" autocomplete="off"></section>`;
+            return `<section class="fs-s"><h4>${esc(s.label)}</h4><div class="fs-chips">${s.opts.map(([v, t, html]) => {
+                const on = String(st[s.key] || '') === String(v);
+                return `<button type="button" class="fchip ${on ? 'on' : ''}" data-k="${esc(s.key)}" data-v="${esc(v)}" aria-pressed="${on}">${html || ''}<span>${esc(t)}</span>${on ? ic('check', 15) : ''}</button>`;
+            }).join('')}</div></section>`;
+        }).join('');
+        label();
+    };
+    box.addEventListener('click', e => {
+        const b = e.target.closest('[data-k]');
+        if (!b) return;
+        st[b.dataset.k] = b.dataset.v;
+        draw();
+    });
+    box.addEventListener('input', e => { const k = e.target.dataset.in; if (k) { st[k] = e.target.value; label(); } });
+    $('[data-reset]', m.el).onclick = () => { keys.forEach(k => { st[k] = ''; }); draw(); };
+    btn.onclick = () => { m.close(); apply(st); };
+    draw();
+    return m;
+}
+
+/* Филтрҳои интихобшуда дар болои рӯйхат: ҳар кадом бо «×» пок мешавад */
+const filterPills = (list, allAct = 'fDropAll') => !list.length ? '' : `<div class="fpills">${list.map(([text, key, act = 'fDrop', html = '']) =>
+    `<button type="button" class="fpill" data-act="${act}" data-key="${esc(key)}" aria-label="Пок кардан: ${esc(text)}">${html}<span>${esc(text)}</span>${ic('x', 13)}</button>`).join('')}
+    ${list.length > 1 ? `<button type="button" class="fpill clear" data-act="${allAct}">Ҳамаро пок кардан</button>` : ''}</div>`;
+
 /* Интихоб аз якчанд роҳ: калиди тугмаи интихобшуда ё null бармегардад */
 function choose({ title, text = '', options }) {
     return new Promise(res => {
@@ -420,21 +475,23 @@ const searchBox = (ph, scan = false) => `<div class="search ${scan ? 'has-scan' 
 const chips = (key, list) => `<div class="chips">${list.map(([k, t]) => `<button type="button" class="chip ${(S.f[key] || '') === k ? 'on' : ''}" data-act="chip" data-key="${key}" data-k="${k}">${t}</button>`).join('')}</div>`;
 const categories = () => [...new Set(S.products.map(p => String(p.category || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru'));
 const catSelect = () => `<select class="input" data-f="cat" aria-label="Гурӯҳ">${options([['', 'Ҳамаи гурӯҳҳо'], ...categories().map(c => [c, c])], S.f.cat || '')}</select>`;
-const filterBtn = n => `<button type="button" class="btn f-btn" data-act="fToggle" aria-expanded="${S.fOpen}">${ic('filter', 16)}Филтр${n ? `<span class="f-n">${n}</span>` : ''}</button>`;
+/* Тугмаи «Филтр» — тирезаи филтрро мекушояд; рақам: чанд филтр интихоб шудааст */
+const filterBtn = n => `<button type="button" class="fbtn ${n ? 'on' : ''}" data-act="fOpen" aria-haspopup="dialog">${ic('filter', 16)}<span>Филтр</span>${n ? `<b class="f-n">${n}</b>` : ''}</button>`;
 /* Вақте танҳо рӯйхат нав мешавад, рақами филтр ва тугмаи тозакунӣ низ бояд нав шаванд */
 function syncFilterUi() {
     const n = S.page === 'rep' ? repFilters()
         : S.page === 'tx' ? [S.f.type, S.f.loc, S.f.from, S.f.to].filter(Boolean).length
             : +!!S.f.cat;
-    const btn = $('#pageHead .f-btn');
+    const btn = $('#pageHead .fbtn');
     if (btn) {
+        btn.classList.toggle('on', !!n);
         let b = $('.f-n', btn);
-        if (n && !b) { b = document.createElement('span'); b.className = 'f-n'; btn.append(b); }
+        if (n && !b) { b = document.createElement('b'); b.className = 'f-n'; btn.append(b); }
         if (b) { if (n) b.textContent = n; else b.remove(); }
     }
     const clear = $('#pageHead [data-act=repClear]');
     if (clear) clear.hidden = !n;
 }
 const moreBtn = (shown, all) => all > shown ? `<button class="btn more" data-act="more">Боз нишон додан (${fmt(all - shown)})</button>` : '';
-const empty = (title, text = '', btn = '') => `<div class="empty">${ic('search', 26)}<b>${esc(title)}</b>${esc(text)}${btn ? `<br>${btn}` : ''}</div>`;
+const empty = (title, text = '', btn = '', icon = 'search') => `<div class="empty"><span class="empty-i">${ic(icon, 26)}</span><b>${esc(title)}</b>${text ? `<p>${esc(text)}</p>` : ''}${btn ? `<div class="empty-a">${btn}</div>` : ''}</div>`;
 

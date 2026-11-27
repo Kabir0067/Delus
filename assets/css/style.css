@@ -495,10 +495,12 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 .thumb.cover { display: grid; width: 100%; height: 100%; border-radius: 0; }
 .thumb.cover .art { inset: 12%; width: 76%; height: 76%; }
 
-.empty { padding: 48px 16px; text-align: center; color: var(--ink-3); background: var(--surface); border-radius: var(--r); box-shadow: var(--shadow-s); }
-.empty .ic { margin: 0 auto 10px; }
-.empty b { display: block; color: var(--ink); font-size: 16px; margin-bottom: 2px; }
-.empty .btn { margin-top: 14px; }
+.empty { padding: 40px 20px; text-align: center; color: var(--ink-3); background: var(--surface); border-radius: var(--r); box-shadow: var(--shadow-s); overflow-wrap: anywhere; }
+.empty-i { display: grid; place-items: center; width: 64px; height: 64px; margin: 0 auto 14px; border-radius: 20px; background: var(--brand-bg); color: var(--brand); }
+.empty b { display: block; color: var(--ink); font-size: 17px; font-weight: 700; margin-bottom: 4px; }
+.empty p { max-width: 440px; margin: 0 auto; font-size: 14.5px; line-height: 1.5; }
+.empty-a { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 18px; }
+.empty-a .btn { min-height: 46px; padding: 0 18px; }
 .more { display: flex; margin: 14px auto 0; }
 
 /* ---------- саҳифаи асосӣ ---------- */
@@ -1135,7 +1137,7 @@ details.extra[open] summary { padding-bottom: 10px; }
     }
     .fab:active { transform: scale(.96); }
     .app[data-page="home"] .fab, .app[data-page="set"] .fab, .app[data-page="rep"] .fab { display: none; }
-    .app[data-page="prod"] .view, .app[data-page="stock"] .view, .app[data-page="tx"] .view { padding-bottom: 88px; }
+    .app[data-page="prod"] .view, .app[data-page="stock"] .view, .app[data-page="tx"] .view, .app[data-page="debt"] .view { padding-bottom: 88px; }
     .f-csv { font-size: 0; gap: 0; width: 46px; }
     .pick-grid { margin-left: -16px; margin-right: -16px; padding-left: 16px; padding-right: 16px; }
     .toolbar > .btn.sel-btn { flex: none; width: 46px; padding: 0; gap: 0; font-size: 0; }
@@ -1493,4 +1495,122 @@ details.extra[open] summary { padding-bottom: 10px; }
     .np-k { min-height: 50px; font-size: 23px; }
     .np-disp { min-height: 64px; }
     .np-x { font-size: 30px; }
+}
+
+/* ==================================================================
+   ФИЛТР, РАНГ, ҚАРЗ ВА ФУРӮШИ ДУ-ҚАДАМА
+   ================================================================== */
+/* доираи ранг */
+.sw { display: inline-block; flex: none; width: 14px; height: 14px; border-radius: 50%; background: var(--sw); box-shadow: inset 0 0 0 1.5px rgb(15 26 51 / .18); vertical-align: -2px; }
+.sw.k-clear { background: repeating-linear-gradient(45deg, #fff 0 3px, #dde3ee 3px 6px); }
+.sw.k-gold { background: linear-gradient(135deg, #f3d77a, #b8871f); }
+.sw.k-silver { background: linear-gradient(135deg, #f2f4f7, #a9b0bc); }
+.p-col { display: inline-flex; align-items: center; gap: 5px; margin-right: 8px; color: var(--ink-2); }
+.pcard-n small { display: flex; align-items: center; flex-wrap: wrap; }
+
+/* сатри филтр: тугмаи «Филтр» ва тугмачаҳои ҳолат */
+.fbar { display: flex; align-items: center; gap: 8px; margin: -4px 0 12px; min-width: 0; }
+.fbar .chips { flex: 1 1 auto; min-width: 0; margin: 0; padding: 2px 0; }
+.fbtn {
+    flex: none; display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 14px; border-radius: 20px;
+    background: var(--surface); color: var(--ink); font-size: 14px; font-weight: 600; box-shadow: 0 0 0 1.5px var(--line);
+    transition: box-shadow .15s, background .15s, color .15s;
+}
+.fbtn:hover { box-shadow: 0 0 0 1.5px var(--brand); color: var(--brand); }
+.fbtn.on { background: var(--brand-bg); color: var(--brand); box-shadow: 0 0 0 1.5px var(--brand); }
+.fbtn .f-n { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; display: grid; place-items: center; background: var(--brand); color: #fff; font-size: 12px; }
+.fbar .fbtn + .fbtn { margin-left: auto; }
+.fpills { display: flex; flex-wrap: wrap; gap: 8px; margin: -2px 0 14px; }
+.fpill {
+    display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 10px 0 13px; border-radius: 18px;
+    background: var(--brand-bg); color: var(--brand); font-size: 13.5px; font-weight: 600; max-width: 100%;
+}
+.fpill span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fpill .ic { flex: none; opacity: .75; }
+.fpill:hover .ic { opacity: 1; }
+.fpill.clear { background: transparent; color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; padding: 0 6px; }
+
+/* тирезаи филтр */
+.sheet.fs { max-width: 520px; }
+.fs-s + .fs-s { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--line-2); }
+.fs-s h4 { margin: 0 0 10px; font-size: 13px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase; color: var(--ink-3); }
+.fs-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.fchip {
+    display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px; border-radius: 12px; max-width: 100%;
+    background: var(--surface-2); color: var(--ink-2); font-size: 14.5px; font-weight: 600; border: 1.5px solid transparent; text-align: left;
+    transition: background .15s, border-color .15s, color .15s;
+}
+.fchip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fchip:hover { border-color: var(--line); color: var(--ink); }
+.fchip.on { background: var(--brand-bg); color: var(--brand); border-color: var(--brand); }
+.fchip .tile.sm { width: 26px; height: 26px; border-radius: 8px; }
+.fchip .sw { width: 18px; height: 18px; }
+.fs .dates { display: flex; align-items: center; gap: 8px; }
+.fs .dates .input { flex: 1 1 0; min-width: 0; }
+.fs .input { min-height: 46px; }
+.sheet.fs [data-apply].none { background: var(--surface-2); color: var(--ink-3); box-shadow: none; }
+
+/* саҳифаи қарз */
+.toolbar > .btn.debt-new { flex: none; }
+.debtor-a { justify-content: flex-start; }
+.debtor-a small { color: var(--ink-3); font-size: 13px; }
+.debtor-btns { display: flex; gap: 8px; margin: 0; }
+.debtor-btns .btn { flex: 1 1 0; min-width: 0; min-height: 44px; padding: 0 10px; }
+.debtor-btns .btn.pay { flex: 2 1 0; }
+
+/* моли нав: пешниҳоди ном ва ранг */
+.name-sug { margin-top: 8px; padding: 10px; border-radius: var(--r-md); background: var(--amber-bg); }
+.sug-h { margin: 0 2px 8px; font-size: 13px; font-weight: 500; color: var(--amber); }
+.sug { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px; border-radius: 12px; background: var(--surface); text-align: left; min-height: 52px; }
+.sug + .sug { margin-top: 6px; }
+.sug .mini-b { flex: 1; min-width: 0; }
+.sug .mini-b b, .sug .mini-b small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sug .mini-b small { color: var(--ink-3); font-size: 12.5px; }
+.sug > .ic { color: var(--ink-3); flex: none; }
+.sug:hover { box-shadow: 0 0 0 1.5px var(--brand); }
+.col-chips { margin-top: 8px; }
+.qchip.col { display: inline-flex; align-items: center; gap: 6px; }
+.qchip.col.on { background: var(--brand-bg); color: var(--brand); box-shadow: inset 0 0 0 1.5px var(--brand); }
+
+/* тирезаи фурӯш: қадамҳо */
+.step-h { display: flex; align-items: center; gap: 11px; margin: 2px 0 12px; }
+.step-n { display: grid; place-items: center; width: 32px; height: 32px; flex: none; border-radius: 50%; background: var(--brand); color: #fff; font-size: 15px; font-weight: 700; box-shadow: 0 6px 14px -6px rgb(47 86 224 / .7); }
+.step-h b { display: block; font-size: 16px; font-weight: 700; line-height: 1.25; color: var(--ink); }
+.step-h small { display: block; font-size: 13px; color: var(--ink-3); }
+.doc-r .step-h + .field, .doc-r .step-h + .route { margin-top: 0; }
+.sheet-f .step-next, .sheet-f .step-back { display: none; }
+.pick-more { margin-top: 10px; }
+@media (min-width: 1024px) {
+    .doc-r .doc-cart-h { margin-top: 18px; }
+}
+@media (max-width: 1023px) {
+    .sheet.s1 .doc-r, .sheet.s2 .doc-l { display: none; }
+    .sheet.s1 .sheet-f [data-save], .sheet.s1 .sheet-f [data-cancel], .sheet.s2 .sheet-f [data-cancel] { display: none; }
+    .sheet.s1 .sheet-f .step-next { display: inline-flex; flex: 1 1 100%; gap: 8px; }
+    .sheet.s1 .sheet-f .step-next:not(.ready) { background: var(--surface-2); color: var(--ink-3); box-shadow: none; }
+    .sheet.s1 .sheet-f .step-next.ready { animation: nudge .45s ease-out; }
+    .sheet.s2 .sheet-f .step-back { display: inline-flex; flex: 0 0 auto; padding: 0 16px; }
+    .sheet.s2 .sheet-f [data-save] { flex: 1 1 0; }
+    /* қадами 1: каталог ба поён, на ба паҳлу: ангушт осон мебинад */
+    .sheet.s1 .doc .pick-grid {
+        grid-auto-flow: row; grid-template-rows: none; grid-auto-columns: auto; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+        overflow: visible; margin: 12px 0 0; padding: 0; scroll-snap-type: none;
+    }
+    .sheet.s1 .doc .pick-i .thumb { height: 86px; }
+    .sheet.s1 .doc .pick-none { width: auto; }
+    .sheet.s2 .doc-r .doc-cart-h { margin-top: 16px; }
+}
+@keyframes nudge { 40% { transform: scale(1.03); } }
+
+@media (max-width: 719px) {
+    .fbar { margin-top: -6px; }
+    .fbtn { min-height: 42px; }
+    .toolbar > .btn.debt-new { width: auto; padding: 0 14px; gap: 6px; font-size: 14px; }
+    .sum-line { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0 0 12px; padding: 0; overflow: visible; }
+    .sum-line > div { min-width: 0; padding: 11px 12px; }
+    .sum-line > div:last-child:nth-child(odd) { grid-column: 1 / -1; }
+    .sum-line b { font-size: 15px; overflow-wrap: anywhere; }
+    .debtor-btns .btn span { display: inline; }
+    .sheet.fs { max-width: none; }
+    .fchip { min-height: 46px; }
 }

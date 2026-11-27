@@ -127,7 +127,7 @@ const hasDigit = w => /\d/.test(w);
 
 /* Номҳои маъмул. Решаҳо: калима бо ин сар шавад кофист. */
 const SYN = [
-    ['ламп', 'светил', 'свет', 'чарог', 'чарок', 'люстр', 'прожект', 'бра', 'led', 'лед', 'панел', 'софит'],
+    ['ламп', 'светил', 'свет', 'чарог', 'чарок', 'люстр', 'прожект', 'led', 'лед', 'панел'],
     ['розет', 'разет', 'розетк'],
     ['виключ', 'выключ', 'калид', 'клавиш', 'тугма', 'переключ'],
     ['кабел', 'провод', 'сим', 'шнур', 'ввг', 'пвс'],
@@ -211,8 +211,53 @@ function matchInfo(text, query) {
 }
 const matchScore = (text, query) => matchInfo(text, query)[0];
 const hasAll = (text, query) => matchScore(text, query) > 0;
-/* Ҳама чизе, ки мол бо он ёфт мешавад */
-const prodText = p => [p.name, p.product_code, p.category, p.series, p.color, p.description, p.barcode].filter(x => x !== undefined && x !== '').join(' ');
+/* ---------- рангҳо ----------
+   Дар ҷадвал ранг ҳар хел навишта мешавад: «White», «белый», «Сафед». Барнома онҳоро як ранг мешуморад:
+   филтр як тугма нишон медиҳад ва ҷустуҷӯи «сафед» молҳои «White»-ро ҳам меёбад.
+   [калид, номи тоҷикӣ, номи русӣ, ранги экран, решаҳои калимаҳо] */
+const COLORS = [
+    ['white', 'Сафед', 'белый', '#ffffff', ['сафед', 'сафид', 'бел', 'white', 'вайт']],
+    ['black', 'Сиёҳ', 'чёрный', '#1f2430', ['сиёҳ', 'сиах', 'черн', 'black', 'блек']],
+    ['grey', 'Хокистарӣ', 'серый', '#9aa3b2', ['хокистар', 'сер', 'grey', 'gray', 'грей']],
+    ['silver', 'Нуқрагин', 'серебристый', '#c3c9d3', ['нуқра', 'серебр', 'silver', 'силвер', 'хром']],
+    ['gold', 'Тиллоӣ', 'золотой', '#d4a937', ['тилло', 'золот', 'gold', 'голд']],
+    ['beige', 'Бежӣ', 'бежевый', '#e9dcc0', ['беж', 'beige', 'крем', 'cream', 'gream', 'слонов']],
+    ['brown', 'Қаҳвагӣ', 'коричневый', '#8b5a2b', ['қаҳва', 'кахва', 'коричн', 'brown', 'шоколад', 'венге']],
+    ['red', 'Сурх', 'красный', '#e5484d', ['сурх', 'красн', 'red']],
+    ['orange', 'Норинҷӣ', 'оранжевый', '#f97316', ['норинҷ', 'оранж', 'orange']],
+    ['yellow', 'Зард', 'жёлтый', '#f5c518', ['зард', 'желт', 'yellow']],
+    ['green', 'Сабз', 'зелёный', '#22a06b', ['сабз', 'зелен', 'green']],
+    ['blue', 'Кабуд', 'синий', '#3b82f6', ['кабуд', 'син', 'голуб', 'blue']],
+    ['purple', 'Бунафш', 'фиолетовый', '#8b5cf6', ['бунафш', 'фиолет', 'сирен', 'purple', 'violet']],
+    ['pink', 'Гулобӣ', 'розовый', '#ec4899', ['гулоб', 'розов', 'pink']],
+    ['clear', 'Шаффоф', 'прозрачный', 'transparent', ['шаффоф', 'прозрач', 'transparent']]
+].map(([key, label, ru, css, stems]) => ({ key, label, ru, css, stems: stems.map(s => skel(norm(s))) }));
+const COLOR_BY = new Map(COLORS.map(c => [c.key, c]));
+/* Калидҳои ранги матн: «Gream gold» → beige, gold. Ранги ношинос — бо номи худаш («~…») */
+const COLOR_MEMO = new Map();
+function colorKeys(text) {
+    const memo = String(text ?? '');
+    if (!COLOR_MEMO.has(memo)) COLOR_MEMO.set(memo, colorKeysOf(memo));
+    return COLOR_MEMO.get(memo);
+}
+function colorKeysOf(text) {
+    const words = norm(text).split(' ').filter(w => w && !hasDigit(w)).map(skel);
+    if (!words.length) return [];
+    const keys = [];
+    for (const w of words) {
+        let best = null, len = 0;
+        for (const c of COLORS) for (const s of c.stems) if (w.startsWith(s) && s.length > len) { best = c.key; len = s.length; }
+        if (best && !keys.includes(best)) keys.push(best);
+    }
+    return keys.length ? keys : ['~' + norm(text)];
+}
+const colorsOf = p => colorKeys(p.color);
+const colorName = key => COLOR_BY.has(key) ? COLOR_BY.get(key).label : key.slice(1).replace(/^./, ch => ch.toUpperCase());
+const swatch = key => `<i class="sw ${COLOR_BY.has(key) ? 'k-' + key : 'k-other'}" style="--sw:${COLOR_BY.has(key) ? COLOR_BY.get(key).css : '#cfd5df'}"></i>`;
+
+/* Ҳама чизе, ки мол бо он ёфт мешавад (ранг бо номи тоҷикӣ ва русӣ ҳам) */
+const prodText = p => [p.name, p.product_code, p.category, p.series, p.color, ...colorsOf(p).filter(k => COLOR_BY.has(k)).flatMap(k => [COLOR_BY.get(k).label, COLOR_BY.get(k).ru, k]), p.description, p.barcode]
+    .filter(x => x !== undefined && x !== '').join(' ');
 /* Рӯйхат бо ҷустуҷӯ: беҳтарин мувофиқат аввал.
    Агар моли аниқ ёфт шавад, мувофиқатҳои суст (хатои имло, номи маъмул) нишон дода намешаванд:
    «прожектор» танҳо прожекторро медиҳад, «чароғ» бошад (ки дар номҳо нест) ҳамаи лампаҳоро. */

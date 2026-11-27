@@ -33,7 +33,7 @@ const imgs = await photos(8);
 function tables() {
     const P = [['id', 'product_code', 'name', 'category', 'series', 'color', 'mesta', 'taga', 'unit', 'units_per_box', 'purchase_price', 'sale_price', 'image_url', 'description', 'status', 'created_at', 'min_stock']];
     names.forEach((n, i) => P.push([i + 1, 'DL-' + String(i + 1).padStart(3, '0'), n, ['Розетка', 'Калид', 'Калид', 'Кабел', 'Кабел', 'Автомат', 'Автомат', 'Равшанӣ', 'Равшанӣ', 'Удлинитель', 'Равшанӣ', 'Қуттӣ', 'Дигар', 'Дигар'][i],
-        '', '', '', '', i === 3 || i === 4 ? 'метр' : 'дона', '', 10 + i, 18 + i * 2, i < 8 ? 'img:' + (i + 1) : '', '', 'ACTIVE', day(90), '']));
+        '', ['White', 'Сафед', 'Black', ''][i % 4], '', '', i === 3 || i === 4 ? 'метр' : 'дона', '', 10 + i, 18 + i * 2, i < 8 ? 'img:' + (i + 1) : '', '', 'ACTIVE', day(90), '']));
     const L = [['id', 'name', 'location_type', 'status'], [1, 'Анбори асосӣ', 'Warehouse', 'ACTIVE'], [2, 'Анбори 2', 'Warehouse', 'ACTIVE'], [3, 'Мағоза', 'Shop', 'ACTIVE']];
     const T = [['id', 'transaction_code', 'date', 'type', 'product_id', 'from_location_id', 'to_location_id', 'quantity', 'unit', 'base_quantity', 'unit_cost', 'unit_price', 'note', 'created_at', 'receipt_code']];
     let id = 0;
@@ -391,6 +391,88 @@ const PHONE = { width: 390, height: 844, isMobile: true, hasTouch: true, deviceS
     await cam.close();
 }
 
+/* ================= 10. Ранг, филтр, пешниҳоди ном, фурӯши ду-қадама, қарз ================= */
+{
+    const { ctx, page, errors, t } = await session();
+    // ранг: «White» ва «Сафед» як ранг; ҷустуҷӯи тоҷикӣ ва русӣ
+    const whites = t.Products.slice(1).filter(r => ['White', 'Сафед'].includes(r[5])).length;
+    const byWord = await page.evaluate(() => ['сафед', 'белый', 'white'].map(q => filterProducts({ q }).length));
+    ok(byWord.every(n => n === byWord[0]) && byWord[0] >= whites, 'search by colour: «сафед», «белый», «white» find the same products: ' + byWord);
+    await page.evaluate(() => go('prod'));
+    await page.click('#pageHead [data-act=fOpen]');
+    await page.waitForSelector('.ov .sheet.fs');
+    ok(await page.$('.ov .fchip[data-k=color][data-v=white] .sw') !== null, 'filter window shows colour chips with a colour dot');
+    await page.click('.ov .fchip[data-k=color][data-v=white]');
+    const label = await page.$eval('.ov [data-apply]', e => e.textContent);
+    ok(label.includes(String(whites)), 'apply button counts the result: ' + label);
+    await page.click('.ov [data-apply]');
+    await wait(150);
+    const shown = await page.$$eval('#pageBody .pcard', e => e.length);
+    ok(shown === whites && await page.evaluate(() => S.f.color === 'white'), `colour filter shows ${shown} of ${whites} white products`);
+    ok(await page.$eval('#pageHead .fpill', e => /Сафед/.test(e.textContent)), 'active filter is shown as a pill');
+    ok(await page.$eval('#pageHead .fbtn .f-n', e => e.textContent) === '1', 'filter button shows 1 active filter');
+    await page.click('#pageHead .fpill');
+    await wait(150);
+    ok(await page.evaluate(() => !S.f.color) && await page.$$eval('#pageBody .pcard', e => e.length) > whites, 'tapping the pill removes the filter');
+    // гурӯҳ ва тартиб дар ҳамон тиреза
+    await page.click('#pageHead [data-act=fOpen]');
+    await page.waitForSelector('.ov .sheet.fs');
+    await page.click('.ov .fchip[data-k=cat][data-v="Кабел"]');
+    await page.click('.ov .fchip[data-k=sort][data-v=priceDown]');
+    await page.click('.ov [data-apply]');
+    await wait(150);
+    const prices = await page.$$eval('#pageBody .pcard .sell', e => e.map(x => parseFloat(x.textContent.replace(/\s/g, '').replace(',', '.'))));
+    ok(prices.length === 2 && prices[0] >= prices[1], 'category + price sort together: ' + prices);
+    await page.evaluate(() => ACT.fDropAll());
+
+    // пешниҳоди ном ҳангоми иловаи мол
+    await page.evaluate(() => productForm());
+    await page.waitForSelector('.ov [name=name]');
+    await page.type('.ov [name=name]', 'Розет');
+    await page.waitForSelector('.ov [data-sug]:not([hidden]) .sug', { timeout: 3000 });
+    const sugName = await page.$eval('.ov .sug b', e => e.textContent);
+    await page.click('.ov .sug');
+    const filled = await page.evaluate(() => ({ name: document.querySelector('.ov [name=name]').value, cat: document.querySelector('.ov [name=category]').value, price: document.querySelector('.ov [name=sale_price]').value }));
+    ok(filled.name === sugName && filled.cat === 'Розетка' && filled.price !== '', 'typing a name suggests existing products; a tap fills name, group and price: ' + JSON.stringify(filled));
+    await page.click('.ov .col-chips [data-col="Сиёҳ"]');
+    ok(await page.$eval('.ov [name=color]', e => e.value) === 'Сиёҳ', 'colour is chosen with one tap');
+    await page.evaluate(() => Modal.closeAll());
+
+    // саҳифаи қарз холӣ: тугмаҳо бо навиштаҷот, аломат дар ҷояш
+    t.Debts.splice(1); t.DebtPayments.splice(1);
+    await page.evaluate(() => sync());
+    await page.evaluate(() => go('debt'));
+    await wait(100);
+    const em = await page.evaluate(() => {
+        const b = [...document.querySelectorAll('#pageBody .empty-a .btn')];
+        return { n: b.length, text: b.map(x => x.textContent.trim()), icMargin: b.map(x => getComputedStyle(x.querySelector('.ic')).marginTop) };
+    });
+    ok(em.n === 2 && em.text[0].includes('насия') && em.icMargin.every(x => x === '0px'), 'empty debt page: two labelled buttons, icons in place ' + JSON.stringify(em));
+    ok(errors.length === 0, 'no console errors ' + JSON.stringify(errors.slice(0, 2)));
+    await ctx.close();
+}
+{
+    // фурӯш дар телефон: ду қадам, тугмаи «қафо»-и телефон ба каталог бармегардад
+    const { ctx, page, errors } = await session(PHONE);
+    await page.evaluate(() => go('prod'));
+    await page.evaluate(() => docModal('sale'));
+    await page.waitForSelector('.ov .sheet.s1 .pick-i');
+    ok(await page.$eval('.ov .doc-r', e => e.offsetParent === null), 'phone step 1: only the catalog is shown');
+    await page.click('.ov .pick-i:nth-child(1)');
+    await page.click('.ov .pick-i:nth-child(1)');
+    ok(/\(1\)/.test(await page.$eval('.ov [data-next]', e => e.textContent)), 'the big button shows the cart: ' + await page.$eval('.ov [data-next]', e => e.textContent));
+    await page.click('.ov [data-next]');
+    await page.waitForSelector('.ov .sheet.s2');
+    ok(await page.$eval('.ov .doc-l', e => e.offsetParent === null) && await page.$eval('.ov .line [data-v=q]', e => e.value) === '2', 'step 2: cart with quantity 2, catalog hidden');
+    ok(await page.$eval('.ov [data-save]', e => e.textContent.trim()) === 'Фурӯхтан', 'sell button says «Фурӯхтан»');
+    await page.goBack();
+    await wait(200);
+    ok(await page.$('.ov .sheet.s1') !== null, 'phone back button returns to the catalog, the sale stays open');
+    await page.screenshot({ path: path.join(OUT, 'sale-steps-390.png') });
+    ok(errors.length === 0, 'no console errors in the phone sale ' + JSON.stringify(errors.slice(0, 2)));
+    await ctx.close();
+}
+
 /* ================= 6. Андозаҳои экран: ҳамаи саҳифаҳо ва тирезаҳо ================= */
 const VP = [[320, 640], [360, 760], [375, 667], [390, 844], [414, 896], [768, 1024], [1024, 768], [1280, 800], [1440, 900], [1920, 1080]];
 const issues = [];
@@ -420,6 +502,9 @@ for (const [w, h] of VP) {
         debtor: () => page.evaluate(() => { debtorView(customers()[0].key); }),
         receipt: () => page.evaluate(() => { debtReceipt(customers()[0].key); }),
         quick: () => page.evaluate(() => { quickSale(prodBy(1)); }),
+        filter: () => page.evaluate(() => { go('prod'); ACT.fOpen(); }),
+        txFilter: () => page.evaluate(() => { go('tx'); ACT.fOpen(); }),
+        newProduct: async () => { await page.evaluate(() => productForm()); await page.type('.ov [name=name]', 'Лам'); await wait(200); },
         quickDebt: async () => { await page.evaluate(() => quickSale(prodBy(1))); await page.click('.ov [data-pay=debt]'); },
         numpad: () => page.evaluate(() => { quickSale(prodBy(1)); openNumpad(document.querySelector('.ov [name=q]'), { chips: [['1', '1'], ['5', '5'], ['25', 'Ҳама 25']] }); }),
         scanner: () => page.evaluate(() => { scanCode({ title: 'Скан' }); })
@@ -436,7 +521,7 @@ for (const [w, h] of VP) {
     await ctx.close();
     console.log('     checked', tag);
 }
-ok(issues.length === 0, 'layout at 10 screen sizes, 8 pages, 14 windows: ' + (issues.length ? '\n   ' + issues.slice(0, 15).join('\n   ') : 'no issues'));
+ok(issues.length === 0, 'layout at 10 screen sizes, 8 pages, 17 windows: ' + (issues.length ? '\n   ' + issues.slice(0, 15).join('\n   ') : 'no issues'));
 
 await b.close();
 srv.close();
