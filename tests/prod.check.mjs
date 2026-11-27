@@ -95,7 +95,8 @@ try {
     ok(inSheet === 2, 'after re-reading the sheet: exactly 2 rows with that receipt (no duplicates)');
 
     /* нест кардан: ҳолати «Интихоб» */
-    await page.evaluate(() => go('prod'));
+    /* дар ҷадвали воқеӣ мол бисёр аст: аввал молҳои санҷиширо бо ҷустуҷӯ меёбем */
+    await page.evaluate(m => go('prod', { q: m }), M);
     await page.click('[data-act=selMode]');
     for (const id of ids) await page.click(`.pcard-sel[data-id="${id}"]`);
     await page.click('.selbar [data-act=selDelete]');
